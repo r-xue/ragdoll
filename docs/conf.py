@@ -3,14 +3,15 @@
 # For a full list of options see:
 #   https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import datetime
 import importlib.metadata
 
 # -- Project information -----------------------------------------------------
 
 project = "Ragdoll"
-copyright = "2026, Rui Xue"
+copyright = f"{datetime.date.today().year}, Rui Xue"
 author = "Rui Xue"
-release = importlib.metadata.version("ragdoll")
+release = importlib.metadata.version("ragdoll-ai")
 
 # -- General configuration ---------------------------------------------------
 
