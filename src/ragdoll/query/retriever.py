@@ -1,4 +1,4 @@
-"""Semantic retriever.
+"""Semantic retriever via LlamaIndex.
 
 Queries the vector store and returns structured search results.
 """
@@ -8,7 +8,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from ragdoll.store import vectordb
+from llama_index.core.retrievers import VectorIndexAutoRetriever
+from llama_index.core.vector_stores.types import MetadataInfo, VectorStoreInfo
+from llama_index.core.schema import NodeWithScore
+
+from ragdoll.store.vectordb import get_index
+from ragdoll.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +22,11 @@ logger = logging.getLogger(__name__)
 class SearchResult:
     """A single search hit.
 
-    Attributes
-    ----------
-    chunk_id : str
-        The chunk identifier.
-    text : str
-        The chunk text.
-    score : float
-        Similarity score (cosine distance — lower is better).
-    metadata : dict
-        Chunk metadata.
+    Attributes:
+        chunk_id (str): The chunk identifier.
+        text (str): The chunk text.
+        score (float): Similarity score (cosine distance — lower is better).
+        metadata (dict): Chunk metadata.
     """
 
     chunk_id: str
@@ -42,42 +42,56 @@ def search(
 ) -> list[SearchResult]:
     """Perform semantic search over the indexed documents.
 
-    Parameters
-    ----------
-    query : str
-        Natural-language search query.
-    top_k : int, optional
-        Number of results (default: from settings).
-    source_filter : str, optional
-        If provided, filter by source type (``"pdf"`` or ``"jira"``).
+    Args:
+        query (str): Natural-language search query.
+        top_k (int, optional): Number of results (default: from settings).
+        source_filter (str, optional): If provided, filter by source type (``"pdf"`` or ``"jira"``).
 
-    Returns
-    -------
-    list[SearchResult]
-        Ranked search results.
+    Returns:
+        list[SearchResult]: Ranked search results.
     """
-    where = None
-    if source_filter:
-        where = {"source": source_filter}
-
-    results = vectordb.query(query, n_results=top_k, where=where)
-
+    index = get_index()
+    n = top_k or settings.top_k
+    
+    # Define metadata fields for the auto-retriever so it knows how to filter
+    vector_store_info = VectorStoreInfo(
+        content_info="Jira tickets and PDF technical documentation.",
+        metadata_info=[
+            MetadataInfo(name="source", type="str", description="Source of the data ('jira' or 'pdf')"),
+            MetadataInfo(name="status", type="str", description="Status of the Jira ticket"),
+            MetadataInfo(name="project", type="str", description="Project key for the Jira ticket"),
+            MetadataInfo(name="assignee", type="str", description="Assignee of the Jira ticket"),
+        ]
+    )
+    
+    retriever = VectorIndexAutoRetriever(
+        index,
+        vector_store_info=vector_store_info,
+        similarity_top_k=n,
+        empty_query_info_yields_all_kwargs=True
+    )
+    
+    # Retrieve nodes using LlamaIndex
+    nodes: list[NodeWithScore] = retriever.retrieve(query)
+    
+    # In LlamaIndex, the query engine auto-retriever can't apply strict manual filters on top
+    # easily in the simple retrieve call without building a query bundle, but we can manually
+    # post-filter if a hard source_filter is provided (for simple cases).
+    
     hits: list[SearchResult] = []
-    if not results["ids"] or not results["ids"][0]:
-        return hits
-
-    for chunk_id, text, metadata, distance in zip(
-        results["ids"][0],
-        results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0],
-    ):
+    for node_with_score in nodes:
+        node = node_with_score.node
+        meta = node.metadata
+        
+        if source_filter and meta.get("source") != source_filter:
+            continue
+            
         hits.append(
             SearchResult(
-                chunk_id=chunk_id,
-                text=text,
-                score=distance,
-                metadata=metadata,
+                chunk_id=node.node_id,
+                text=node.text,
+                score=node_with_score.score or 0.0,
+                metadata=meta,
             )
         )
 

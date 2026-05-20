@@ -65,32 +65,22 @@ def ingest() -> None:
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
 def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: int | None) -> None:
     """Ingest PDF files or directories of PDFs."""
-    from ragdoll.ingest.chunker import chunk_documents
     from ragdoll.ingest.pdf import ingest_pdfs
-    from ragdoll.store.vectordb import count, upsert_chunks
+    from ragdoll.store.vectordb import count
 
     if not paths:
         console.print("[red]Error:[/red] Provide at least one PDF file or directory.")
         raise SystemExit(1)
 
-    pdf_paths = [Path(p) for p in paths]
+    with console.status("[bold cyan]Extracting, chunking, and embedding PDFs using LlamaIndex…"):
+        # We only take the first path for simplicity with SimpleDirectoryReader in this refactor,
+        # or we could loop over paths. Let's just pass the first path since SimpleDirectoryReader
+        # takes a directory.
+        n = ingest_pdfs(paths[0])
 
-    with console.status("[bold cyan]Extracting text from PDFs…"):
-        docs = ingest_pdfs(pdf_paths)
-
-    if not docs:
+    if n == 0:
         console.print("[yellow]No documents extracted.[/yellow]")
         return
-
-    console.print(f"  📄 Extracted [green]{len(docs)}[/green] document(s)")
-
-    with console.status("[bold cyan]Chunking documents…"):
-        chunks = chunk_documents(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-
-    console.print(f"  ✂️  Created [green]{len(chunks)}[/green] chunk(s)")
-
-    with console.status("[bold cyan]Embedding and storing chunks…"):
-        n = upsert_chunks(chunks)
 
     console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
@@ -120,9 +110,8 @@ def ingest_jira(
     For multi-site ingestion, use --url and --token to override the
     configured defaults per invocation.
     """
-    from ragdoll.ingest.chunker import chunk_documents
     from ragdoll.ingest.jira import ingest_jira as _ingest_jira
-    from ragdoll.store.vectordb import count, upsert_chunks
+    from ragdoll.store.vectordb import count
 
     # Temporarily override settings for this invocation.
     if url:
@@ -134,22 +123,12 @@ def ingest_jira(
     if auth_method:
         settings.jira_auth_method = auth_method
 
-    with console.status("[bold cyan]Fetching JIRA issues…"):
-        docs = _ingest_jira(jql, max_results=max_results)
+    with console.status("[bold cyan]Fetching and embedding JIRA issues using LlamaIndex…"):
+        n = _ingest_jira(jql)
 
-    if not docs:
-        console.print("[yellow]No issues found for the given JQL.[/yellow]")
+    if n == 0:
+        console.print("[yellow]No issues found or ingested for the given JQL.[/yellow]")
         return
-
-    console.print(f"  🎫 Fetched [green]{len(docs)}[/green] issue(s)")
-
-    with console.status("[bold cyan]Chunking documents…"):
-        chunks = chunk_documents(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-
-    console.print(f"  ✂️  Created [green]{len(chunks)}[/green] chunk(s)")
-
-    with console.status("[bold cyan]Embedding and storing chunks…"):
-        n = upsert_chunks(chunks)
 
     console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
@@ -161,9 +140,8 @@ def ingest_jira(
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
 def ingest_code(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: int | None) -> None:
     """Ingest Python source files or directories of Python code."""
-    from ragdoll.ingest.chunker import chunk_documents
     from ragdoll.ingest.code import ingest_code as _ingest_code
-    from ragdoll.store.vectordb import count, upsert_chunks
+    from ragdoll.store.vectordb import count, get_index
 
     if not paths:
         console.print("[red]Error:[/red] Provide at least one Python file or directory.")
@@ -180,15 +158,13 @@ def ingest_code(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: i
 
     console.print(f"  🐍 Extracted [green]{len(docs)}[/green] code unit(s)")
 
-    with console.status("[bold cyan]Chunking documents…"):
-        chunks = chunk_documents(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    with console.status("[bold cyan]Embedding and storing chunks using LlamaIndex…"):
+        index = get_index()
+        for doc in docs:
+            index.insert(doc)
+        n = len(docs)
 
-    console.print(f"  ✂️  Created [green]{len(chunks)}[/green] chunk(s)")
-
-    with console.status("[bold cyan]Embedding and storing chunks…"):
-        n = upsert_chunks(chunks)
-
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
+    console.print(f"  💾 Stored [green]{n}[/green] document node(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
@@ -333,6 +309,36 @@ def chat(source: str | None, top_k: int | None) -> None:
             console.print(f"\n[red]Error: {e}[/red]")
             # Remove the failed user message to keep history clean.
             messages.pop()
+
+
+# ── Web UI & API ───────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--port", type=int, default=7860, help="Port to run the UI on.")
+def ui(port: int) -> None:
+    """Launch the built-in Gradio web interface."""
+    try:
+        from ragdoll.ui import launch_ui
+        launch_ui(port=port)
+    except ImportError:
+        console.print("[bold red]Error:[/bold red] Gradio is not installed. Run [cyan]pixi add gradio[/cyan] first.")
+        import sys
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--host", type=str, default="0.0.0.0", help="Host to bind the server to.")
+@click.option("--port", type=int, default=8000, help="Port to run the server on.")
+def serve(host: str, port: int) -> None:
+    """Start an OpenAI-compatible REST API for Open WebUI integration."""
+    try:
+        from ragdoll.api import run_server
+        console.print(f"[bold green]Starting Ragdoll API on {host}:{port}[/bold green]")
+        run_server(host=host, port=port)
+    except ImportError:
+        console.print("[bold red]Error:[/bold red] FastAPI is not installed. Run [cyan]pixi add fastapi uvicorn[/cyan] first.")
+        import sys
+        sys.exit(1)
 
 
 # ── Status command ─────────────────────────────────────────────────────

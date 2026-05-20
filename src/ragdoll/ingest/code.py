@@ -15,7 +15,8 @@ import logging
 from pathlib import Path
 from textwrap import dedent
 
-from ragdoll.ingest.pdf import Document  # reuse the shared Document dataclass
+from llama_index.core import Document
+from ragdoll.store.vectordb import get_index
 
 logger = logging.getLogger(__name__)
 
@@ -177,16 +178,12 @@ def _should_skip_dir(dirname: str) -> bool:
 def ingest_code(paths: list[Path]) -> list[Document]:
     """Ingest Python source files from files and/or directories.
 
-    Parameters
-    ----------
-    paths : list[Path]
-        Files or directories to ingest.  Directories are walked
-        recursively for ``*.py`` files.
+    Args:
+        paths (list[Path]): Files or directories to ingest. Directories are walked
+            recursively for ``*.py`` files.
 
-    Returns
-    -------
-    list[Document]
-        One or more Documents per Python file (one per function/class).
+    Returns:
+        list[Document]: One or more Documents per Python file (one per function/class).
     """
     py_files: list[Path] = []
 

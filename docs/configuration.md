@@ -101,7 +101,7 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 |-----|------|---------|-------------|
 | `chunk_size` | `int` | `1000` | Max characters per chunk |
 | `chunk_overlap` | `int` | `200` | Overlap between consecutive chunks |
-| `top_k` | `int` | `8` | Default number of chunks to retrieve |
+| `top_k` | `int` | `20` | Default number of chunks to retrieve |
 
 ## JIRA Authentication
 

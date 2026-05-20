@@ -1,15 +1,17 @@
-"""RAG chain — retrieve context, build prompt, call LLM.
+"""RAG chain via LlamaIndex.
 
 This module ties together retrieval and generation into a single
-question-answering pipeline.
+question-answering pipeline using LlamaIndex LLM engines.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Generator
+import re
 
-from ragdoll.llm import ollama
+from llama_index.core import Settings
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from ragdoll.query.retriever import SearchResult, search
 
 logger = logging.getLogger(__name__)
@@ -57,64 +59,34 @@ def _format_context(results: list[SearchResult]) -> str:
         source = r.metadata.get("doc_id", r.chunk_id)
         
         # Build a metadata header for the chunk to preserve context
-        # (e.g., who is assigned to this Jira ticket, even if this chunk is just a comment)
-        meta_items = []
-        for k, v in r.metadata.items():
-            if k not in ("source", "doc_id", "filepath", "node_type", "key") and v:
-                meta_items.append(f"{k.capitalize()}: {v}")
-                
-        meta_str = " | ".join(meta_items)
-        if meta_str:
-            parts.append(f"[{source}]\n{meta_str}\n{r.text}")
-        else:
-            parts.append(f"[{source}]\n{r.text}")
-            
+        meta_str = ", ".join(f"{k}: {v}" for k, v in r.metadata.items() if k != "doc_id")
+        
+        parts.append(f"[{source}] (Meta: {meta_str})\n{r.text.strip()}")
     return "\n\n".join(parts)
 
 
-def ask(
+def query(
     question: str,
     top_k: int | None = None,
     source_filter: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
-    """Ask a question using the RAG pipeline.
-
-    Parameters
-    ----------
-    question : str
-        The user's question.
-    top_k : int, optional
-        Number of context chunks to retrieve.
-    source_filter : str, optional
-        Limit retrieval to a source type.
-    stream : bool
-        If True, returns a token generator.
-
-    Returns
-    -------
-    str or Generator[str, None, None]
-    """
+    """Single-turn RAG query."""
     results = search(question, top_k=top_k, source_filter=source_filter)
-
-    if not results:
-        msg = "No relevant documents found. Try ingesting some data first."
-        if stream:
-            def _empty():
-                yield msg
-            return _empty()
-        return msg
-
-    context = _format_context(results)
+    context = _format_context(results) if results else "(No relevant context found.)"
     prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=question)
 
-    logger.debug("RAG prompt length: %d chars, %d context chunks", len(prompt), len(results))
-
-    return ollama.generate(
-        prompt=prompt,
-        system=SYSTEM_PROMPT,
-        stream=stream,
-    )
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        ChatMessage(role=MessageRole.USER, content=prompt),
+    ]
+    
+    if stream:
+        resp = Settings.llm.stream_chat(messages)
+        return (chunk.delta for chunk in resp)
+    
+    resp = Settings.llm.chat(messages)
+    return resp.message.content or ""
 
 
 def summarize(
@@ -123,23 +95,7 @@ def summarize(
     source_filter: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
-    """Summarize retrieved information about a topic.
-
-    Parameters
-    ----------
-    topic : str
-        The topic to summarize.
-    top_k : int, optional
-        Number of context chunks.
-    source_filter : str, optional
-        Limit to a source type.
-    stream : bool
-        If True, returns a token generator.
-
-    Returns
-    -------
-    str or Generator[str, None, None]
-    """
+    """Summarize context retrieved for a topic."""
     results = search(topic, top_k=top_k, source_filter=source_filter)
 
     if not results:
@@ -153,11 +109,17 @@ def summarize(
     context = _format_context(results)
     prompt = SUMMARIZE_PROMPT_TEMPLATE.format(context=context, topic=topic)
 
-    return ollama.generate(
-        prompt=prompt,
-        system=SYSTEM_PROMPT,
-        stream=stream,
-    )
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        ChatMessage(role=MessageRole.USER, content=prompt),
+    ]
+
+    if stream:
+        resp = Settings.llm.stream_chat(messages)
+        return (chunk.delta for chunk in resp)
+        
+    resp = Settings.llm.chat(messages)
+    return resp.message.content or ""
 
 
 def chat_with_context(
@@ -166,47 +128,40 @@ def chat_with_context(
     source_filter: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
-    """Chat with RAG context injected from the latest user message.
-
-    The most recent user message is used as the retrieval query.
-    Retrieved context is prepended to the conversation as a system message.
-
-    Parameters
-    ----------
-    messages : list[dict]
-        Conversation history (``role`` / ``content`` dicts).
-    top_k : int, optional
-        Number of context chunks.
-    source_filter : str, optional
-        Limit to a source type.
-    stream : bool
-        If True, returns a token generator.
-
-    Returns
-    -------
-    str or Generator[str, None, None]
-    """
-    # Find the latest user message for retrieval.
+    """Chat with RAG context injected from the latest user message."""
     user_query = ""
     for msg in reversed(messages):
         if msg["role"] == "user":
             user_query = msg["content"]
+            # Clean up Open WebUI's injected chat history
+            user_query = re.sub(r'<chat_history>.*?</chat_history>', '', user_query, flags=re.DOTALL).strip()
             break
 
+    llama_messages = []
+    
     if not user_query:
-        return ollama.chat(messages, stream=stream)
+        # Just normal chat without RAG
+        for msg in messages:
+            role = MessageRole(msg["role"])
+            llama_messages.append(ChatMessage(role=role, content=msg["content"]))
+    else:
+        # Retrieve context.
+        results = search(user_query, top_k=top_k, source_filter=source_filter)
+        context = _format_context(results) if results else "(No relevant context found.)"
 
-    # Retrieve context.
-    results = search(user_query, top_k=top_k, source_filter=source_filter)
-    context = _format_context(results) if results else "(No relevant context found.)"
+        # Build augmented message list with context as system prompt.
+        system_content = f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
+        llama_messages.append(ChatMessage(role=MessageRole.SYSTEM, content=system_content))
+        
+        # Add conversation history
+        for msg in messages:
+            if msg["role"] != "system":
+                role = MessageRole(msg["role"])
+                llama_messages.append(ChatMessage(role=role, content=msg["content"]))
 
-    # Build augmented message list with context as system prompt.
-    augmented = [
-        {"role": "system", "content": f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"},
-    ]
-    # Add conversation history (skip any existing system messages).
-    for msg in messages:
-        if msg["role"] != "system":
-            augmented.append(msg)
-
-    return ollama.chat(augmented, stream=stream)
+    if stream:
+        resp = Settings.llm.stream_chat(llama_messages)
+        return (chunk.delta or "" for chunk in resp)
+        
+    resp = Settings.llm.chat(llama_messages)
+    return resp.message.content or ""

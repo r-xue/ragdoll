@@ -107,7 +107,7 @@ Retrieved chunks are formatted as context and injected into an LLM prompt:
 User input
   │
   ▼
-embed(query) ──→ ChromaDB.query(top_k=8) ──→ [chunk₁, chunk₂, ..., chunk₈]
+embed(query) ──→ ChromaDB.query(top_k=20) ──→ [chunk₁, chunk₂, ..., chunk₂₀]
                                                        │
                                                        ▼
                                               Format as context

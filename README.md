@@ -64,6 +64,19 @@ pixi run ragdoll ingest code ./src/
 pixi run ragdoll ingest code ./path/to/project/
 ```
 
+#### Reingesting Data (LlamaIndex Update)
+If you are upgrading from an older version of `ragdoll` to the LlamaIndex-backed version, your existing ChromaDB data is fully backward compatible. However, it is highly recommended to wipe the old index and reingest your data to take advantage of LlamaIndex's superior semantic chunking (which splits by sentences instead of fixed character limits).
+
+To clear your database and start fresh:
+```bash
+# Delete the old ChromaDB collection
+rm -rf ~/.ragdoll/data/chroma
+
+# Re-run your ingestion commands
+pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
+pixi run ragdoll ingest pdf ./docs/
+```
+
 ### Search
 
 ```bash
@@ -126,7 +139,7 @@ Ragdoll uses a **4-layer precedence** configuration strategy:
 | `collection_name` | `ragdoll` | ChromaDB collection name |
 | `chunk_size` | `1000` | Characters per chunk |
 | `chunk_overlap` | `200` | Overlap between consecutive chunks |
-| `top_k` | `8` | Default retrieval count |
+| `top_k` | `20` | Default retrieval count |
 
 ## Architecture
 

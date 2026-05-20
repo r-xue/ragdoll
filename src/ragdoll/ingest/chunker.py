@@ -23,14 +23,10 @@ DEFAULT_SEPARATORS = ["\n\n", "\n", ". ", ", ", " ", ""]
 class Chunk:
     """A single text chunk with provenance metadata.
 
-    Attributes
-    ----------
-    chunk_id : str
-        Unique identifier: ``<doc_id>:<chunk_index>``.
-    text : str
-        The chunk text.
-    metadata : dict
-        Inherited document metadata plus ``chunk_index``.
+    Attributes:
+        chunk_id (str): Unique identifier: ``<doc_id>:<chunk_index>``.
+        text (str): The chunk text.
+        metadata (dict): Inherited document metadata plus ``chunk_index``.
     """
 
     chunk_id: str
@@ -120,19 +116,13 @@ def chunk_document(
 ) -> list[Chunk]:
     """Split a Document into overlapping Chunks.
 
-    Parameters
-    ----------
-    doc : Document
-        The source document.
-    chunk_size : int, optional
-        Max characters per chunk (default: from settings).
-    chunk_overlap : int, optional
-        Overlap between consecutive chunks (default: from settings).
+    Args:
+        doc (Document): The source document.
+        chunk_size (int, optional): Max characters per chunk (default: from settings).
+        chunk_overlap (int, optional): Overlap between consecutive chunks (default: from settings).
 
-    Returns
-    -------
-    list[Chunk]
-        Ordered list of chunks with inherited metadata.
+    Returns:
+        list[Chunk]: Ordered list of chunks with inherited metadata.
     """
     size = chunk_size or settings.chunk_size
     overlap = chunk_overlap or settings.chunk_overlap
@@ -169,10 +159,13 @@ def chunk_documents(
 ) -> list[Chunk]:
     """Chunk a list of Documents.
 
-    Returns
-    -------
-    list[Chunk]
-        All chunks from all documents, in order.
+    Args:
+        docs (list[Document]): Documents to chunk.
+        chunk_size (int, optional): Max characters per chunk.
+        chunk_overlap (int, optional): Overlap between consecutive chunks.
+
+    Returns:
+        list[Chunk]: All chunks from all documents, in order.
     """
     all_chunks: list[Chunk] = []
     for doc in docs:

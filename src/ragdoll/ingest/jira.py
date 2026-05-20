@@ -1,178 +1,86 @@
-"""JIRA ticket ingestion.
+"""JIRA ingestion pipeline via LlamaIndex.
 
-Fetches issues from an on-prem (or cloud) JIRA instance via the REST API
-and normalises them into Document records for the RAG pipeline.
+Connects to a JIRA instance, retrieves issues using JQL,
+and indexes them into the vector store.
 """
 
-from __future__ import annotations
-
 import logging
-
-from jira import JIRA
+from llama_index.readers.jira import JiraReader
 
 from ragdoll.config import settings
-from ragdoll.ingest.pdf import Document  # reuse the shared Document dataclass
+from ragdoll.store.vectordb import get_index
 
 logger = logging.getLogger(__name__)
 
 
-def _connect() -> JIRA:
-    """Create an authenticated JIRA client from settings.
+def ingest_jira(jql: str = "project = CAS") -> int:
+    """Fetch and ingest JIRA issues matching a JQL query.
 
-    Supports two auth modes (controlled by ``jira_auth_method``):
+    Args:
+        jql (str): JIRA Query Language string.
 
-    - ``"pat"`` (default): Personal Access Token for JIRA Data Center.
-      Uses Bearer token auth — only the token is needed, no username.
-    - ``"basic"``: Username + API token for JIRA Cloud.
+    Returns:
+        int: Number of chunks upserted.
     """
-    # Default timeout: 30 seconds for connections, 60 seconds for reads
-    options = {
-        "server": settings.jira_url,
-        "timeout": (30, 60),
-    }
+    if not settings.jira_url or not settings.jira_token or not settings.jira_user:
+        logger.error("JIRA credentials missing in configuration.")
+        return 0
 
-    if not settings.jira_token:
-        logger.warning("No JIRA token configured — attempting anonymous access.")
-        return JIRA(options)
-
-    method = settings.jira_auth_method.lower()
-
-    if method == "pat":
-        # JIRA Data Center Personal Access Token → Bearer header.
-        logger.info("Connecting to JIRA with PAT auth.")
-        return JIRA(options, token_auth=settings.jira_token)
-    elif method == "basic":
-        # JIRA Cloud: username + API token → Basic auth.
-        logger.info("Connecting to JIRA with basic auth.")
-        return JIRA(options, basic_auth=(settings.jira_user, settings.jira_token))
-    else:
-        raise ValueError(
-            f"Unknown jira_auth_method: {method!r}. Use 'pat' or 'basic'."
-        )
-
-
-def _issue_to_text(issue) -> str:
-    """Convert a JIRA issue object into a structured text representation.
-
-    The text is formatted to preserve the most important fields for
-    retrieval and summarization.
-    """
-    fields = issue.fields
-    parts = [
-        f"# {issue.key}: {fields.summary}",
-        "",
-        f"**Status:** {fields.status}",
-        f"**Type:** {fields.issuetype}",
-        f"**Priority:** {getattr(fields, 'priority', 'N/A')}",
-        f"**Assignee:** {getattr(fields, 'assignee', 'Unassigned')}",
-        f"**Reporter:** {getattr(fields, 'reporter', 'Unknown')}",
-        f"**Created:** {fields.created}",
-        f"**Updated:** {fields.updated}",
-    ]
-
-    # Components
-    components = getattr(fields, "components", [])
-    if components:
-        parts.append(f"**Components:** {', '.join(c.name for c in components)}")
-
-    # Labels
-    labels = getattr(fields, "labels", [])
-    if labels:
-        parts.append(f"**Labels:** {', '.join(labels)}")
-
-    # Fix versions
-    fix_versions = getattr(fields, "fixVersions", [])
-    if fix_versions:
-        parts.append(f"**Fix Versions:** {', '.join(v.name for v in fix_versions)}")
-
-    # Description
-    description = getattr(fields, "description", None)
-    if description:
-        parts.extend(["", "## Description", "", description])
-
-    # Comments
-    comments = issue.fields.comment.comments if hasattr(fields, "comment") else []
-    if comments:
-        parts.extend(["", "## Comments", ""])
-        for comment in comments:
-            author = getattr(comment, "author", "Unknown")
-            parts.append(f"**{author}** ({comment.created}):")
-            parts.append(comment.body)
-            parts.append("")
-
-    return "\n".join(parts)
-
-
-def ingest_jira(
-    jql: str,
-    max_results: int | None = None,
-) -> list[Document]:
-    """Fetch JIRA issues matching a JQL query and return Documents.
-
-    Parameters
-    ----------
-    jql : str
-        JQL query string (e.g. ``"project = CAS AND updated >= -30d"``).
-    max_results : int, optional
-        Maximum number of issues to fetch.  ``None`` means fetch all.
-
-    Returns
-    -------
-    list[Document]
-        One Document per JIRA issue.
-    """
-    client = _connect()
-    logger.info("Fetching JIRA issues: %s", jql)
-
-    documents: list[Document] = []
-    start_at = 0
-    batch = settings.jira_batch_size
-    total_fetched = 0
-
-    while True:
-        issues = client.search_issues(
-            jql,
-            startAt=start_at,
-            maxResults=batch,
-            fields="*all",
-        )
-
-        if not issues:
-            break
-
-        for issue in issues:
-            text = _issue_to_text(issue)
-            assignee = getattr(issue.fields, "assignee", None)
-            reporter = getattr(issue.fields, "reporter", None)
-            doc = Document(
-                doc_id=f"jira:{issue.key}",
-                text=text,
-                metadata={
-                    "source": "jira",
-                    "key": issue.key,
-                    "summary": str(issue.fields.summary),
-                    "status": str(issue.fields.status),
-                    "type": str(issue.fields.issuetype),
-                    "project": issue.key.rsplit("-", 1)[0],
-                    "created": str(issue.fields.created),
-                    "updated": str(issue.fields.updated),
-                    "assignee": str(assignee) if assignee else "Unassigned",
-                    "reporter": str(reporter) if reporter else "Unknown",
-                },
+    logger.info("Fetching JIRA issues using LlamaIndex JiraReader: %s", jql)
+    
+    # We use LlamaIndex JiraReader which automatically formats Jira tickets
+    # into Document nodes.
+    try:
+        if settings.jira_auth_method == "pat":
+            # For PAT auth, LlamaIndex expects PATauth dict and uses the URL literally.
+            reader = JiraReader(
+                PATauth={
+                    "server_url": settings.jira_url,
+                    "api_token": settings.jira_token,
+                }
             )
-            documents.append(doc)
+        else:
+            # For Basic auth, LlamaIndex prepends "https://" automatically,
+            # so we must strip it if it's already there to prevent double https://.
+            server_url = settings.jira_url
+            if server_url.startswith("https://"):
+                server_url = server_url[8:]
+            elif server_url.startswith("http://"):
+                server_url = server_url[7:]
+                
+            reader = JiraReader(
+                email=settings.jira_user,
+                api_token=settings.jira_token,
+                server_url=server_url,
+            )
 
-        total_fetched += len(issues)
-        logger.info("Fetched %d issues so far…", total_fetched)
+        documents = reader.load_data(query=jql)
+        
+    except Exception as e:
+        logger.error("Failed to fetch from JIRA: %s", e)
+        return 0
 
-        if max_results and total_fetched >= max_results:
-            documents = documents[:max_results]
-            break
+    if not documents:
+        logger.info("No JIRA issues found for query: %s", jql)
+        return 0
+        
+    for doc in documents:
+        doc.metadata["source"] = "jira"
+        # ChromaDB requires flat metadata (only str, int, float, bool).
+        # JiraReader might return lists (e.g., labels) or dicts. We must sanitize them.
+        for key, value in list(doc.metadata.items()):
+            if value is None:
+                continue
+            if isinstance(value, list):
+                doc.metadata[key] = ", ".join(str(v) for v in value)
+            elif not isinstance(value, (str, int, float, bool)):
+                doc.metadata[key] = str(value)
 
-        if len(issues) < batch:
-            break  # no more pages
+    logger.info("Fetched %d JIRA documents. Indexing into vector store...", len(documents))
+    
+    index = get_index()
+    for doc in documents:
+        index.insert(doc)
 
-        start_at += batch
-
-    logger.info("Ingested %d JIRA issues.", len(documents))
-    return documents
+    logger.info("Successfully ingested JIRA issues.")
+    return len(documents)

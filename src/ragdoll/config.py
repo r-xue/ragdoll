@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200  # overlap between consecutive chunks
 
     # ── Retrieval ──────────────────────────────────────────────────────
-    top_k: int = 8  # number of chunks to retrieve
+    top_k: int = 20  # number of chunks to retrieve
 
     @property
     def chroma_dir(self) -> Path:
@@ -123,4 +123,26 @@ class Settings(BaseSettings):
 
 # Module-level singleton — importable as ``from ragdoll.config import settings``
 settings = Settings()
+
+def setup_llamaindex():
+    from llama_index.core import Settings as LlamaSettings
+    from llama_index.llms.ollama import Ollama
+    from llama_index.embeddings.ollama import OllamaEmbedding
+
+    # Configure global LLM and Embeddings for LlamaIndex
+    LlamaSettings.llm = Ollama(
+        model=settings.chat_model,
+        base_url=settings.ollama_host,
+        temperature=settings.temperature,
+        request_timeout=600.0,
+    )
+    LlamaSettings.embed_model = OllamaEmbedding(
+        model_name=settings.embed_model,
+        base_url=settings.ollama_host,
+    )
+    LlamaSettings.chunk_size = settings.chunk_size
+    LlamaSettings.chunk_overlap = settings.chunk_overlap
+
+# Initialize on import
+setup_llamaindex()
 
