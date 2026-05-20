@@ -1,0 +1,59 @@
+[project]
+name = "ragdoll"
+version = "0.1.0"
+description = "Retrieval-Augmented Generation Driven by Offline Local LLMs — a fully-local RAG system for JIRA tickets, code, and PDFs, powered by Ollama."
+authors = [{name = "Rui Xue", email = "rx.astro@gmail.com"}]
+requires-python = ">= 3.11"
+license = {text = "MIT"}
+readme = "README.md"
+dependencies = [
+    "chromadb >= 0.6",
+    "pymupdf >= 1.25",
+    "jira >= 3.8",
+    "click >= 8.1",
+    "rich >= 13.0",
+    "pydantic-settings >= 2.0",
+    "httpx >= 0.27", "pytest",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx >= 7.0",
+    "furo",
+    "myst-parser >= 3.0",
+    "sphinx-autodoc-typehints",
+]
+
+[project.scripts]
+ragdoll = "ragdoll.cli:cli"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+ragdoll = { path = ".", editable = true }
+sphinx = ">=7.0"
+furo = "*"
+myst-parser = ">=3.0"
+sphinx-autodoc-typehints = "*"
+
+[tool.pixi.tasks]
+ragdoll = "ragdoll"
+ingest-pdf = { cmd = "ragdoll ingest pdf", description = "Ingest PDF documents" }
+search = { cmd = "ragdoll search", description = "Semantic search" }
+chat = { cmd = "ragdoll chat", description = "Interactive RAG chat" }
+docs = { cmd = "sphinx-build -b html docs docs/_build/html", description = "Build Sphinx documentation" }
+
+[tool.pixi.dependencies]
+python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

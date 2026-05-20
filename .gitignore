@@ -1,0 +1,32 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment secrets
+.env
+
+# Ragdoll data
+.ragdoll/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Sphinx docs build
+docs/_build/
+docs/_static/
