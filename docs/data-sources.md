@@ -87,6 +87,53 @@ pixi run ragdoll ingest jira \
 All issues from all sites are stored in the same vector collection, so
 queries, summaries, and chat draw from all ingested sources.
 
+### Extracted Metadata
+
+Every ingested JIRA ticket carries the following metadata fields, available
+for both auto-retrieval filtering and context display.
+
+**From JiraReader (built-in):**
+
+| Metadata Key | Type | Description |
+|---|---|---|
+| `id` | `str` | Internal JIRA issue ID |
+| `title` | `str` | Issue summary |
+| `url` | `str` | Permalink to the issue |
+| `created_at` | `str` | Creation timestamp |
+| `updated_at` | `str` | Last update timestamp |
+| `labels` | `str` | Comma-separated labels |
+| `status` | `str` | Workflow status (Open, In Progress, Closed, etc.) |
+| `assignee` | `str` | Assignee display name |
+| `reporter` | `str` | Reporter display name |
+| `project` | `str` | Project name |
+| `issue_type` | `str` | Bug, Story, Task, Epic, etc. |
+| `priority` | `str` | Critical, Major, Minor, Trivial, etc. |
+| `epic_key` | `str` | Parent epic issue key |
+| `epic_summary` | `str` | Parent epic summary |
+| `epic_description` | `str` | Parent epic description |
+
+**Enriched from raw JIRA API:**
+
+| Metadata Key | Type | Description |
+|---|---|---|
+| `key` | `str` | Issue key (e.g. `PIPE-1234`) |
+| `components` | `str` | Comma-separated component names (e.g. `hif_makeimages, hif_findcont`) |
+| `fix_versions` | `str` | Target fix version names |
+| `affects_versions` | `str` | Affected version names |
+| `resolution` | `str` | Resolution status (Fixed, Won't Fix, Duplicate, etc.) |
+| `resolution_date` | `str` | When the issue was resolved |
+| `subtask_count` | `int` | Number of subtasks |
+| `linked_issues` | `str` | Related issues with relationship (e.g. `blocks PIPE-999, is blocked by CAS-123`) |
+| `votes` | `int` | Vote count |
+| `watches` | `int` | Watcher count |
+| `sprint` | `str` | Sprint name (Jira Software agile boards) |
+| `story_points` | `float` | Story points estimate |
+| `environment` | `str` | Environment field text |
+
+> **Note:** `components`, `fix_versions`, `affects_versions`, and
+> `linked_issues` are also appended to the document text so they are
+> discoverable via semantic search, not just metadata filtering.
+
 ## Python Source Code
 
 **Module:** `ragdoll.ingest.code`

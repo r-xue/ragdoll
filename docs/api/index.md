@@ -45,13 +45,7 @@ Auto-generated documentation from source code docstrings.
    :undoc-members:
 ```
 
-### Chunker
 
-```{eval-rst}
-.. automodule:: ragdoll.ingest.chunker
-   :members:
-   :undoc-members:
-```
 
 ## LLM
 

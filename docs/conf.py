@@ -60,7 +60,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "furo"
-html_title = "Ragdoll Documentation"
+html_title = "🧶 Ragdoll"
 html_static_path = ["_static"]
 html_theme_options = {
     "light_css_variables": {

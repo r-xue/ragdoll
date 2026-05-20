@@ -52,40 +52,53 @@ def search(
     """
     index = get_index()
     n = top_k or settings.top_k
-    
+
     # Define metadata fields for the auto-retriever so it knows how to filter
     vector_store_info = VectorStoreInfo(
-        content_info="Jira tickets and PDF technical documentation.",
+        content_info='Jira tickets and PDF technical documentation.',
         metadata_info=[
-            MetadataInfo(name="source", type="str", description="Source of the data ('jira' or 'pdf')"),
-            MetadataInfo(name="status", type="str", description="Status of the Jira ticket"),
-            MetadataInfo(name="project", type="str", description="Project key for the Jira ticket"),
-            MetadataInfo(name="assignee", type="str", description="Assignee of the Jira ticket"),
+            MetadataInfo(name='source', type='str', description="Source of the data ('jira' or 'pdf')"),
+            MetadataInfo(name='key', type='str', description='JIRA issue key (e.g. PIPE-1234)'),
+            MetadataInfo(name='status', type='str', description='Status of the Jira ticket'),
+            MetadataInfo(name='project', type='str', description='Project name for the Jira ticket'),
+            MetadataInfo(name='assignee', type='str', description='Assignee of the Jira ticket'),
+            MetadataInfo(name='reporter', type='str', description='Reporter who created the ticket'),
+            MetadataInfo(name='issue_type', type='str', description='Issue type (Bug, Story, Task, Epic, etc.)'),
+            MetadataInfo(name='priority', type='str', description='Priority level (Critical, Major, Minor, etc.)'),
+            MetadataInfo(name='components', type='str', description='Comma-separated JIRA component names'),
+            MetadataInfo(name='fix_versions', type='str', description='Comma-separated target fix version names'),
+            MetadataInfo(name='affects_versions', type='str', description='Comma-separated affected version names'),
+            MetadataInfo(name='resolution', type='str',
+                         description='Resolution status (Fixed, Won\'t Fix, Duplicate, etc.)'),
+            MetadataInfo(name='labels', type='str', description='Comma-separated labels'),
+            MetadataInfo(name='linked_issues', type='str',
+                         description='Comma-separated linked issue keys and relationship types'),
+            MetadataInfo(name='sprint', type='str', description='Sprint name'),
         ]
     )
-    
+
     retriever = VectorIndexAutoRetriever(
         index,
         vector_store_info=vector_store_info,
         similarity_top_k=n,
         empty_query_info_yields_all_kwargs=True
     )
-    
+
     # Retrieve nodes using LlamaIndex
     nodes: list[NodeWithScore] = retriever.retrieve(query)
-    
+
     # In LlamaIndex, the query engine auto-retriever can't apply strict manual filters on top
     # easily in the simple retrieve call without building a query bundle, but we can manually
     # post-filter if a hard source_filter is provided (for simple cases).
-    
+
     hits: list[SearchResult] = []
     for node_with_score in nodes:
         node = node_with_score.node
         meta = node.metadata
-        
+
         if source_filter and meta.get("source") != source_filter:
             continue
-            
+
         hits.append(
             SearchResult(
                 chunk_id=node.node_id,
