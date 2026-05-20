@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ragdoll"
+name = "ragdoll-ai"
 version = "0.2.0"
 description = "Retrieval-Augmented Generation Driven by Offline Local LLMs — a fully-local RAG system for JIRA tickets, code, and PDFs, powered by Ollama."
 authors = [{name = "Rui Xue", email = "rx.astro@gmail.com"}]
