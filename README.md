@@ -177,7 +177,9 @@ CLI / Chat  →  Embed query  →  Retriever  ←──────────�
 
 ## Documentation
 
-Full documentation is available under `docs/` and can be built with Sphinx:
+Full documentation is hosted at **[ragdoll-ai.readthedocs.io](https://ragdoll-ai.readthedocs.io/)**.
+
+You can also build the documentation locally from the `docs/` directory using Sphinx:
 
 ```bash
 pixi run docs
