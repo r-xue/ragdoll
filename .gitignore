@@ -29,7 +29,7 @@ build/
 
 # Sphinx docs build
 docs/_build/
-docs/_static/
+
 
 # Notes
 notes/

@@ -1,0 +1,13 @@
+/* Hide the "Made with Furo" text in the footer */
+.bottom-of-page .left-details {
+    font-size: 0;
+}
+
+.bottom-of-page .left-details > .copyright,
+.bottom-of-page .left-details > .last-updated {
+    font-size: 14px;
+}
+
+.bottom-of-page .left-details > a {
+    display: none;
+}

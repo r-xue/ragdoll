@@ -60,9 +60,11 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # -- Options for HTML output -------------------------------------------------
 
+html_show_sphinx = False
 html_theme = "furo"
 html_title = "🧶 Ragdoll"
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 html_theme_options = {
     "light_css_variables": {
         "color-brand-primary": "#6C5CE7",
