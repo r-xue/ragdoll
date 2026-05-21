@@ -135,7 +135,7 @@ directly on the CLI:
 
 ```bash
 # Primary (uses config.toml defaults)
-pixi run ragdoll ingest jira --jql "project = CAS"
+pixi run ragdoll ingest jira --jql "project = MAIN"
 
 # Secondary Data Center instance
 pixi run ragdoll ingest jira \

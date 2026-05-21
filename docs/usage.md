@@ -24,13 +24,13 @@ PDFs are processed with PyMuPDF and split into overlapping character-based chunk
 
 ```bash
 # Recent tickets from a project
-pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
+pixi run ragdoll ingest jira --jql "project = MAIN AND updated >= -30d"
 
 # Specific component with a limit
-pixi run ragdoll ingest jira --jql "project = CAS AND component = tclean" --max-results 100
+pixi run ragdoll ingest jira --jql "project = MAIN AND component = frontend" --max-results 100
 
 # Multiple projects
-pixi run ragdoll ingest jira --jql "project in (CAS, PIPE) AND updated >= -60d"
+pixi run ragdoll ingest jira --jql "project in (MAIN, OTHER) AND updated >= -60d"
 ```
 
 JIRA ingestion extracts the full issue structure: summary, description,
@@ -49,7 +49,7 @@ To ingest from **multiple JIRA instances**, use `--url`, `--token`, and
 
 ```bash
 # Site 1 — uses defaults from ~/.ragdoll/config.toml
-pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
+pixi run ragdoll ingest jira --jql "project = MAIN AND updated >= -30d"
 
 # Site 2 — different JIRA Data Center instance
 pixi run ragdoll ingest jira \

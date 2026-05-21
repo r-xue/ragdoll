@@ -40,6 +40,10 @@ def _setup_logging(verbose: bool) -> None:
         datefmt="[%X]",
         handlers=[RichHandler(rich_tracebacks=True, console=console)],
     )
+    # Hide HTTP request spam from ollama/httpx which interferes with the progress bar
+    if not verbose:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 # ── CLI root ───────────────────────────────────────────────────────────
@@ -93,10 +97,12 @@ def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: in
 @click.option("--user", default=None, help="JIRA username (overrides config).")
 @click.option("--token", default=None, help="JIRA API token / PAT (overrides config).")
 @click.option("--auth-method", type=click.Choice(["pat", "basic"]), default=None, help="Auth method (overrides config).")
+@click.option("--server", type=str, default=None, help="Name of the Jira server config to use.")
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
 def ingest_jira(
     jql: str,
+    server: str | None,
     max_results: int | None,
     url: str | None,
     user: str | None,
@@ -107,24 +113,21 @@ def ingest_jira(
 ) -> None:
     """Ingest JIRA issues matching a JQL query.
 
-    For multi-site ingestion, use --url and --token to override the
-    configured defaults per invocation.
+    For multi-site ingestion, use --server to reference a pre-configured server 
+    in your config.toml, or use --url and --token to override manually.
     """
     from ragdoll.ingest.jira import ingest_jira as _ingest_jira
     from ragdoll.store.vectordb import count
 
-    # Temporarily override settings for this invocation.
-    if url:
-        settings.jira_url = url
-    if user:
-        settings.jira_user = user
-    if token:
-        settings.jira_token = token
-    if auth_method:
-        settings.jira_auth_method = auth_method
-
     with console.status("[bold cyan]Fetching and embedding JIRA issues using LlamaIndex…"):
-        n = _ingest_jira(jql)
+        n = _ingest_jira(
+            jql=jql,
+            server=server,
+            override_url=url,
+            override_user=user,
+            override_token=token,
+            override_auth_method=auth_method
+        )
 
     if n == 0:
         console.print("[yellow]No issues found or ingested for the given JQL.[/yellow]")
@@ -158,11 +161,12 @@ def ingest_code(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: i
 
     console.print(f"  🐍 Extracted [green]{len(docs)}[/green] code unit(s)")
 
-    with console.status("[bold cyan]Embedding and storing chunks using LlamaIndex…"):
-        index = get_index()
-        for doc in docs:
-            index.insert(doc)
-        n = len(docs)
+    from rich.progress import track
+    console.print("\n[bold cyan]Embedding and storing chunks using LlamaIndex…[/bold cyan]")
+    index = get_index()
+    for doc in track(docs, description="Embedding code...", console=console):
+        index.insert(doc)
+    n = len(docs)
 
     console.print(f"  💾 Stored [green]{n}[/green] document node(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")

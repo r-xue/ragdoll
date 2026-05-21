@@ -55,7 +55,7 @@ def search(
 
     # Define metadata fields for the auto-retriever so it knows how to filter
     vector_store_info = VectorStoreInfo(
-        content_info='Jira tickets and PDF technical documentation.',
+        content_info='Jira tickets and PDF technical documentation. For date filtering, ONLY use < or > on the created_at_ts and updated_at_ts float timestamp fields (convert user dates to Unix timestamps). DO NOT use string date fields.',
         metadata_info=[
             MetadataInfo(name='source', type='str', description="Source of the data ('jira' or 'pdf')"),
             MetadataInfo(name='key', type='str', description='JIRA issue key (e.g. PIPE-1234)'),
@@ -74,6 +74,8 @@ def search(
             MetadataInfo(name='linked_issues', type='str',
                          description='Comma-separated linked issue keys and relationship types'),
             MetadataInfo(name='sprint', type='str', description='Sprint name'),
+            MetadataInfo(name='created_at_ts', type='float', description='Unix timestamp of when the ticket was created'),
+            MetadataInfo(name='updated_at_ts', type='float', description='Unix timestamp of when the ticket was last updated'),
         ]
     )
 
@@ -85,7 +87,12 @@ def search(
     )
 
     # Retrieve nodes using LlamaIndex
-    nodes: list[NodeWithScore] = retriever.retrieve(query)
+    try:
+        nodes: list[NodeWithScore] = retriever.retrieve(query)
+    except Exception as e:
+        logger.warning("LLM auto-retriever failed (%s). Falling back to basic semantic search.", type(e).__name__)
+        fallback_retriever = index.as_retriever(similarity_top_k=n)
+        nodes = fallback_retriever.retrieve(query)
 
     # In LlamaIndex, the query engine auto-retriever can't apply strict manual filters on top
     # easily in the simple retrieve call without building a query bundle, but we can manually

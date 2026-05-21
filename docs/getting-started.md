@@ -48,15 +48,30 @@ Create your user-level configuration file:
 ```bash
 mkdir -p ~/.ragdoll && chmod 700 ~/.ragdoll
 cat > ~/.ragdoll/config.toml << 'EOF'
-# JIRA credentials
-jira_url = "https://your-jira.example.com"
-jira_user = "your.username"
-jira_token = "YOUR_PERSONAL_ACCESS_TOKEN"
-jira_auth_method = "pat"   # "pat" for Data Center, "basic" for Cloud
+# ==========================================
+# 1. Global / Top-Level Settings
+# (Must be at the very top of the file)
+# ==========================================
+chat_model = "gpt-oss:20b"
+embed_model = "nomic-embed-text"
+chunk_size = 1000
 
-# Model overrides (optional)
-# chat_model = "gpt-oss:20b"
-# embed_model = "nomic-embed-text"
+# ==========================================
+# 2. Jira Server Configurations
+# (Nested dictionary blocks go below globals)
+# ==========================================
+
+[jira_servers.primary]
+url = "https://primary-jira.example.com"
+user = "your.username"
+token = "YOUR_PERSONAL_ACCESS_TOKEN"
+auth_method = "pat"
+
+[jira_servers.secondary]
+url = "https://secondary-jira.example.com"
+user = "your.username"
+token = "YOUR_PERSONAL_ACCESS_TOKEN"
+auth_method = "pat"
 EOF
 chmod 600 ~/.ragdoll/config.toml
 ```

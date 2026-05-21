@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragdoll-ai"
-version = "0.2.0"
+version = "0.2.1"
 description = "Retrieval-Augmented Generation Driven by Offline Local LLMs — a fully-local RAG system for JIRA tickets, code, and PDFs, powered by Ollama."
 authors = [{name = "Rui Xue", email = "rx.astro@gmail.com"}]
 requires-python = ">= 3.11"
@@ -21,7 +21,7 @@ dependencies = [
     "pytest",
     "fastapi",
     "uvicorn",
-    "gradio", "llama-index", "llama-index-vector-stores-chroma", "llama-index-llms-ollama", "llama-index-embeddings-ollama", "llama-index-readers-jira",
+    "gradio", "llama-index", "llama-index-vector-stores-chroma", "llama-index-llms-ollama", "llama-index-embeddings-ollama", "llama-index-readers-jira", "llama-index-readers-file",
 ]
 
 [project.optional-dependencies]

@@ -49,36 +49,47 @@ Issues are fetched in batches (default: 50 per request) with automatic
 pagination. Use `--max-results` to cap the total:
 
 ```bash
-pixi run ragdoll ingest jira --jql "project = CAS" --max-results 200
+pixi run ragdoll ingest jira --jql "project = MAIN" --max-results 200
 ```
 
 ### Multi-Site Ingestion
 
 To ingest from **multiple JIRA instances** (e.g., an internal Data Center and
-a partner's Cloud instance), use CLI flags to override connection settings
-per invocation:
+a partner's Cloud instance), you can define named server blocks in your 
+`~/.ragdoll/config.toml`:
+
+```toml
+[jira_servers.primary]
+url = "https://primary-jira.example.com"
+user = "your.username"
+token = "YOUR_PERSONAL_ACCESS_TOKEN"
+auth_method = "pat"
+
+[jira_servers.cloud]
+url = "https://company.atlassian.net"
+user = "you@company.com"
+token = "CLOUD_API_TOKEN"
+auth_method = "basic"
+```
+
+Then use the `--server` flag to ingest from a specific configured site:
 
 ```bash
-# Primary site (uses ~/.ragdoll/config.toml defaults)
-pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
+# Primary site (uses global defaults if --server is omitted)
+pixi run ragdoll ingest jira --jql "project = MAIN AND updated >= -30d"
 
 # Secondary Data Center site
-pixi run ragdoll ingest jira \
-  --url https://other-jira.example.com \
-  --token OTHER_PAT_TOKEN \
-  --jql "project = EXT AND updated >= -30d"
+pixi run ragdoll ingest jira --server primary --jql "project = EXT AND updated >= -30d"
 
 # Cloud site with basic auth
-pixi run ragdoll ingest jira \
-  --url https://company.atlassian.net \
-  --user you@company.com \
-  --token CLOUD_API_TOKEN \
-  --auth-method basic \
-  --jql "project = CLOUD"
+pixi run ragdoll ingest jira --server cloud --jql "project = CLOUD"
 ```
+
+Alternatively, you can manually override settings per-invocation using CLI flags:
 
 | Override Flag | Description |
 |---------------|-------------|
+| `--server` | Name of the pre-configured server in config.toml |
 | `--url` | JIRA server URL |
 | `--user` | Username (for basic auth) |
 | `--token` | API token or PAT |
@@ -123,7 +134,7 @@ for both auto-retrieval filtering and context display.
 | `resolution` | `str` | Resolution status (Fixed, Won't Fix, Duplicate, etc.) |
 | `resolution_date` | `str` | When the issue was resolved |
 | `subtask_count` | `int` | Number of subtasks |
-| `linked_issues` | `str` | Related issues with relationship (e.g. `blocks PIPE-999, is blocked by CAS-123`) |
+| `linked_issues` | `str` | Related issues with relationship (e.g. `blocks PRJ-999, is blocked by PRJ-123`) |
 | `votes` | `int` | Vote count |
 | `watches` | `int` | Watcher count |
 | `sprint` | `str` | Sprint name (Jira Software agile boards) |

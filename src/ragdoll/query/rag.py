@@ -52,6 +52,22 @@ Topic: {topic}
 Summary:"""
 
 
+INTENT_PROMPT = """\
+Determine if the user's question requires searching a LIVE DATABASE for a list/aggregation of tickets (e.g. "list all bugs", "how many tickets"), or if it requires reading technical documentation to answer a KNOWLEDGE question (e.g. "how do I fix X", "what is Y").
+Reply ONLY with the exact word "DATABASE" or "KNOWLEDGE".
+
+Question: {question}
+Intent:"""
+
+JQL_GENERATOR_PROMPT = """\
+You are an expert Atlassian JIRA administrator.
+Convert the user's natural language request into a valid JQL (Jira Query Language) string.
+Return ONLY the raw JQL string, nothing else. No markdown formatting, no explanations.
+
+User Request: {question}
+JQL:"""
+
+
 def _format_context(results: list[SearchResult]) -> str:
     """Format search results into a context block for the LLM."""
     parts: list[str] = []
@@ -122,6 +138,87 @@ def summarize(
     return resp.message.content or ""
 
 
+def query_live_jira(jql: str) -> str:
+    """Execute a JQL query directly against all configured JIRA APIs."""
+    from llama_index.readers.jira import JiraReader
+    from ragdoll.config import settings
+    
+    # Collect all server configs to query
+    configs_to_query = []
+    
+    # Always include the top-level (global) default server if it's explicitly configured
+    if settings.jira_url and settings.jira_url != "https://jira.example.com" and settings.jira_token:
+        configs_to_query.append({
+            "name": "default",
+            "url": settings.jira_url,
+            "user": settings.jira_user,
+            "token": settings.jira_token,
+            "auth_method": settings.jira_auth_method,
+        })
+        
+    if settings.jira_servers:
+        for name, cfg in settings.jira_servers.items():
+            url = cfg.get("url", settings.jira_url)
+            
+            # Skip unconfigured dummy URLs
+            if url == "https://jira.example.com":
+                continue
+                
+            # Avoid adding the exact same server twice if the user duplicated it
+            if any(c["url"] == url for c in configs_to_query):
+                continue
+                
+            configs_to_query.append({
+                "name": name,
+                "url": url,
+                "user": cfg.get("user", settings.jira_user),
+                "token": cfg.get("token", settings.jira_token),
+                "auth_method": cfg.get("auth_method", settings.jira_auth_method),
+            })
+
+    all_results = []
+    for cfg in configs_to_query:
+        server_url = cfg["url"]
+        if server_url.startswith("https://"):
+            server_url = server_url[8:]
+        elif server_url.startswith("http://"):
+            server_url = server_url[7:]
+            
+        try:
+            if cfg["auth_method"] == "pat":
+                reader = JiraReader(
+                    PATauth={
+                        "server_url": cfg["url"],
+                        "api_token": cfg["token"],
+                    }
+                )
+            else:
+                reader = JiraReader(
+                    email=cfg["user"],
+                    api_token=cfg["token"],
+                    server_url=server_url,
+                )
+            jira_client = reader.jira
+            issues = jira_client.search_issues(jql, maxResults=50)
+            
+            if issues:
+                all_results.append(f"### Results from {cfg['name']} ({server_url}):\nFound {issues.total} total tickets. Showing top {len(issues)}:")
+                for issue in issues:
+                    key = issue.key
+                    summary = issue.fields.summary
+                    status = issue.fields.status.name if issue.fields.status else "Unknown"
+                    assignee = issue.fields.assignee.displayName if issue.fields.assignee else "Unassigned"
+                    updated = issue.fields.updated
+                    all_results.append(f"- {key} ({status}): {summary} | Assignee: {assignee} | Updated: {updated}")
+        except Exception as e:
+            all_results.append(f"### Results from {cfg['name']} ({server_url}):\nFailed to execute JQL '{jql}': {str(e)}")
+
+    if not all_results:
+        return "No tickets found matching this JQL across any configured Jira servers."
+        
+    return "\n".join(all_results)
+
+
 def chat_with_context(
     messages: list[dict[str, str]],
     top_k: int | None = None,
@@ -139,18 +236,42 @@ def chat_with_context(
 
     llama_messages = []
     
-    if not user_query:
-        # Just normal chat without RAG
+    if not user_query or user_query.startswith("### Task:\n"):
+        # Just normal chat without RAG (or fast-path for Open WebUI background tasks)
         for msg in messages:
             role = MessageRole(msg["role"])
             llama_messages.append(ChatMessage(role=role, content=msg["content"]))
     else:
-        # Retrieve context.
-        results = search(user_query, top_k=top_k, source_filter=source_filter)
-        context = _format_context(results) if results else "(No relevant context found.)"
+        # Route query: Database vs Knowledge
+        try:
+            intent_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=user_query))])
+            intent = intent_msg.message.content.strip().upper()
+            logger.info("Query Intent Classified as: %s", intent)
+        except Exception as e:
+            logger.warning("Intent classification failed: %s", e)
+            intent = "KNOWLEDGE"
+            
+        if "DATABASE" in intent:
+            logger.info("Routing query to Live JIRA Database...")
+            try:
+                jql_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=user_query))])
+                jql = jql_msg.message.content.strip()
+                jql = re.sub(r"^```jql\s*|```\s*$", "", jql, flags=re.IGNORECASE).strip()
+                logger.info("Generated JQL: %s", jql)
+                
+                live_results = query_live_jira(jql)
+                system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+            except Exception as e:
+                logger.error("JQL Generation failed: %s", e)
+                system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live database.)"
+                
+        else:
+            # Retrieve context.
+            results = search(user_query, top_k=top_k, source_filter=source_filter)
+            context = _format_context(results) if results else "(No relevant context found.)"
+            system_content = f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
 
         # Build augmented message list with context as system prompt.
-        system_content = f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
         llama_messages.append(ChatMessage(role=MessageRole.SYSTEM, content=system_content))
         
         # Add conversation history

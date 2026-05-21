@@ -48,9 +48,10 @@ def ingest_pdfs(directory: str | Path) -> int:
         
     logger.info("Loaded %d document nodes/pages. Indexing into vector store...", len(documents))
     
+    from rich.progress import track
     index = get_index()
     # Inserting documents will chunk them according to LlamaSettings and embed them
-    for doc in documents:
+    for doc in track(documents, description="Embedding PDFs..."):
         index.insert(doc)
         
     logger.info("Successfully ingested PDF documents.")

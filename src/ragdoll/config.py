@@ -23,6 +23,8 @@ most-specific scope wins.
 from pathlib import Path
 from typing import Tuple, Type
 
+from pydantic import Field
+
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -87,11 +89,34 @@ class Settings(BaseSettings):
         )
 
     # ── JIRA ───────────────────────────────────────────────────────────
+    jira_servers: dict[str, dict] = Field(default_factory=dict)
     jira_url: str = "https://jira.example.com"
     jira_user: str = ""
     jira_token: str = ""
     jira_batch_size: int = 50  # issues per API request
     jira_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
+
+    def get_jira_config(self, server_name: str | None = None) -> dict:
+        """Get the active Jira configuration.
+        If server_name is provided and exists in jira_servers, returns that config.
+        Otherwise, falls back to the default global Jira settings.
+        """
+        if server_name and server_name in self.jira_servers:
+            cfg = self.jira_servers[server_name]
+            return {
+                "url": cfg.get("url", self.jira_url),
+                "user": cfg.get("user", self.jira_user),
+                "token": cfg.get("token", self.jira_token),
+                "batch_size": cfg.get("batch_size", self.jira_batch_size),
+                "auth_method": cfg.get("auth_method", self.jira_auth_method),
+            }
+        return {
+            "url": self.jira_url,
+            "user": self.jira_user,
+            "token": self.jira_token,
+            "batch_size": self.jira_batch_size,
+            "auth_method": self.jira_auth_method,
+        }
 
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
@@ -129,6 +154,62 @@ def setup_llamaindex():
     from llama_index.llms.ollama import Ollama
     from llama_index.embeddings.ollama import OllamaEmbedding
 
+    class OllamaEmbed(OllamaEmbedding):
+        """Custom OllamaEmbedding subclass using the newer /api/embed API.
+
+        Provides batching support to avoid making one HTTP request per node,
+        and enables truncate=True to prevent 'input length exceeds context length' errors.
+        """
+        def get_general_text_embedding(self, texts: str) -> list[float]:
+            safe_texts = texts[:32000] if isinstance(texts, str) else texts
+            result = self._client.embed(
+                model=self.model_name,
+                input=safe_texts,
+                truncate=True,
+                options=self.ollama_additional_kwargs,
+            )
+            return result.embeddings[0]
+
+        async def aget_general_text_embedding(self, prompt: str) -> list[float]:
+            safe_prompt = prompt[:32000] if isinstance(prompt, str) else prompt
+            result = await self._async_client.embed(
+                model=self.model_name,
+                input=safe_prompt,
+                truncate=True,
+                options=self.ollama_additional_kwargs,
+            )
+            return result.embeddings[0]
+
+        def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+            if not texts:
+                return []
+            
+            # Manually truncate to 3500 chars (approx 800-1000 tokens) to safely avoid
+            # Ollama's context length bug which sometimes ignores truncate=True
+            safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
+            
+            result = self._client.embed(
+                model=self.model_name,
+                input=safe_texts,
+                truncate=True,
+                options=self.ollama_additional_kwargs,
+            )
+            return result.embeddings
+
+        async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+            if not texts:
+                return []
+                
+            safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
+            
+            result = await self._async_client.embed(
+                model=self.model_name,
+                input=safe_texts,
+                truncate=True,
+                options=self.ollama_additional_kwargs,
+            )
+            return result.embeddings
+
     # Configure global LLM and Embeddings for LlamaIndex
     LlamaSettings.llm = Ollama(
         model=settings.chat_model,
@@ -136,7 +217,7 @@ def setup_llamaindex():
         temperature=settings.temperature,
         request_timeout=600.0,
     )
-    LlamaSettings.embed_model = OllamaEmbedding(
+    LlamaSettings.embed_model = OllamaEmbed(
         model_name=settings.embed_model,
         base_url=settings.ollama_host,
     )

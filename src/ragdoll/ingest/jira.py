@@ -13,16 +13,32 @@ from ragdoll.store.vectordb import get_index
 logger = logging.getLogger(__name__)
 
 
-def ingest_jira(jql: str = "project = CAS") -> int:
-    """Fetch and ingest JIRA issues matching a JQL query.
+def ingest_jira(
+    jql: str,
+    server: str | None = None,
+    override_url: str | None = None,
+    override_user: str | None = None,
+    override_token: str | None = None,
+    override_auth_method: str | None = None,
+) -> int:
+    """Ingest JIRA issues based on a JQL query.
 
     Args:
         jql (str): JIRA Query Language string.
+        server (str | None): Name of the Jira server config to use.
 
     Returns:
         int: Number of chunks upserted.
     """
-    if not settings.jira_url or not settings.jira_token or not settings.jira_user:
+    cfg = settings.get_jira_config(server)
+    
+    # Apply CLI overrides if present
+    cfg_url = override_url or cfg["url"]
+    cfg_user = override_user or cfg["user"]
+    cfg_token = override_token or cfg["token"]
+    cfg_auth = override_auth_method or cfg["auth_method"]
+
+    if not cfg_url or not cfg_token or not cfg_user:
         logger.error("JIRA credentials missing in configuration.")
         return 0
 
@@ -31,26 +47,26 @@ def ingest_jira(jql: str = "project = CAS") -> int:
     # We use LlamaIndex JiraReader which automatically formats Jira tickets
     # into Document nodes.
     try:
-        if settings.jira_auth_method == "pat":
+        if cfg_auth == "pat":
             # For PAT auth, LlamaIndex expects PATauth dict and uses the URL literally.
             reader = JiraReader(
                 PATauth={
-                    "server_url": settings.jira_url,
-                    "api_token": settings.jira_token,
+                    "server_url": cfg_url,
+                    "api_token": cfg_token,
                 }
             )
         else:
             # For Basic auth, LlamaIndex prepends "https://" automatically,
             # so we must strip it if it's already there to prevent double https://.
-            server_url = settings.jira_url
+            server_url = cfg_url
             if server_url.startswith("https://"):
                 server_url = server_url[8:]
             elif server_url.startswith("http://"):
                 server_url = server_url[7:]
 
             reader = JiraReader(
-                email=settings.jira_user,
-                api_token=settings.jira_token,
+                email=cfg_user,
+                api_token=cfg_token,
                 server_url=server_url,
             )
 
@@ -138,6 +154,8 @@ def ingest_jira(jql: str = "project = CAS") -> int:
 
         # ChromaDB requires flat metadata (only str, int, float, bool).
         # JiraReader might return lists (e.g., labels) or dicts. We must sanitize them.
+        import dateutil.parser
+        
         for key, value in list(doc.metadata.items()):
             if value is None:
                 doc.metadata[key] = ''
@@ -146,11 +164,20 @@ def ingest_jira(jql: str = "project = CAS") -> int:
                 doc.metadata[key] = ', '.join(str(v) for v in value)
             elif not isinstance(value, (str, int, float, bool)):
                 doc.metadata[key] = str(value)
+                
+            # Parse created_at / updated_at into floats for vectorDB inequality filtering
+            if key in ('created_at', 'updated_at') and isinstance(doc.metadata[key], str) and doc.metadata[key]:
+                try:
+                    dt = dateutil.parser.parse(doc.metadata[key])
+                    doc.metadata[f'{key}_ts'] = float(dt.timestamp())
+                except Exception:
+                    pass
 
     logger.info("Fetched %d JIRA documents. Indexing into vector store...", len(documents))
 
+    from rich.progress import track
     index = get_index()
-    for doc in documents:
+    for doc in track(documents, description="Embedding JIRA issues..."):
         index.insert(doc)
 
     logger.info("Successfully ingested JIRA issues.")
