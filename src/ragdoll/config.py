@@ -118,6 +118,30 @@ class Settings(BaseSettings):
             "auth_method": self.jira_auth_method,
         }
 
+    # ── BITBUCKET ──────────────────────────────────────────────────────
+    bitbucket_servers: dict[str, dict] = Field(default_factory=dict)
+    bitbucket_url: str = "https://bitbucket.example.com"
+    bitbucket_user: str = ""
+    bitbucket_token: str = ""
+    bitbucket_auth_method: str = "pat"  # "pat" for HTTP access token, "basic" for username/password
+
+    def get_bitbucket_config(self, server_name: str | None = None) -> dict:
+        """Get the active Bitbucket configuration."""
+        if server_name and server_name in self.bitbucket_servers:
+            cfg = self.bitbucket_servers[server_name]
+            return {
+                "url": cfg.get("url", self.bitbucket_url),
+                "user": cfg.get("user", self.bitbucket_user),
+                "token": cfg.get("token", self.bitbucket_token),
+                "auth_method": cfg.get("auth_method", self.bitbucket_auth_method),
+            }
+        return {
+            "url": self.bitbucket_url,
+            "user": self.bitbucket_user,
+            "token": self.bitbucket_token,
+            "auth_method": self.bitbucket_auth_method,
+        }
+
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
     embed_model: str = "nomic-embed-text"

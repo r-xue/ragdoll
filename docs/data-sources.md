@@ -145,6 +145,57 @@ for both auto-retrieval filtering and context display.
 > `linked_issues` are also appended to the document text so they are
 > discoverable via semantic search, not just metadata filtering.
 
+## Bitbucket Pull Requests
+
+**Module:** `ragdoll.ingest.bitbucket`
+
+Fetches pull requests and their activity threads from an on-premise Bitbucket Server (Data Center) via the REST API. Each PR is converted into a structured document containing:
+
+- PR Title, description, and status
+- Author information
+- A chronological thread of all comments, approvals, and merges
+
+### Example
+
+```bash
+# Ingest all PRs (Open, Merged, and Declined) from a specific repo
+pixi run ragdoll ingest bitbucket --project PROJ --repo backend --state ALL
+
+# Ingest only Open PRs
+pixi run ragdoll ingest bitbucket --project PROJ --repo backend --state OPEN
+```
+
+### Multi-Site Ingestion
+
+Like JIRA, you can configure multiple Bitbucket instances in `~/.ragdoll/config.toml`:
+
+```toml
+[bitbucket_servers.internal]
+url = "https://bitbucket.example.com"
+user = "your.username"
+token = "YOUR_HTTP_ACCESS_TOKEN"
+auth_method = "pat"
+```
+
+Then specify the server during ingestion:
+
+```bash
+pixi run ragdoll ingest bitbucket --server internal --project PROJ --repo backend
+```
+
+### Extracted Metadata
+
+| Metadata Key | Type | Description |
+|---|---|---|
+| `repo` | `str` | Bitbucket repository slug |
+| `pr_id` | `str` | Pull Request numerical ID |
+| `author` | `str` | Author of the PR |
+| `title` | `str` | PR Title |
+| `status` | `str` | MERGED, OPEN, or DECLINED |
+| `created_at_ts` | `float` | Unix timestamp of creation |
+| `updated_at_ts` | `float` | Unix timestamp of last update |
+
+
 ## Python Source Code
 
 **Module:** `ragdoll.ingest.code`

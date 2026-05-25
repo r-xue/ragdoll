@@ -53,8 +53,8 @@ Summary:"""
 
 
 INTENT_PROMPT = """\
-Determine if the user's question requires searching a LIVE DATABASE for a list/aggregation of tickets (e.g. "list all bugs", "how many tickets"), or if it requires reading technical documentation to answer a KNOWLEDGE question (e.g. "how do I fix X", "what is Y").
-Reply ONLY with the exact word "DATABASE" or "KNOWLEDGE".
+Determine if the user's question requires searching a LIVE DATABASE for a list/aggregation of items.
+Reply ONLY with "JIRA_DATABASE" (for issues/tickets), "BITBUCKET_DATABASE" (for pull requests), or "KNOWLEDGE" (for technical documentation/general questions).
 
 Question: {question}
 Intent:"""
@@ -66,6 +66,16 @@ Return ONLY the raw JQL string, nothing else. No markdown formatting, no explana
 
 User Request: {question}
 JQL:"""
+
+BITBUCKET_PARAM_GENERATOR_PROMPT = """\
+You are an expert Bitbucket administrator.
+Extract the project key, repository slug, and state (OPEN, MERGED, DECLINED, or ALL) from the user's request.
+Return ONLY a comma-separated string: project,repo,state
+If a value is not specified, guess a reasonable default. Do NOT use 'bitbucket' as a project or repo name.
+(Hint: if the user mentions 'pipeline', the project is usually 'PIPE' and the repo is 'pipeline').
+
+User Request: {question}
+Params:"""
 
 
 def _format_context(results: list[SearchResult]) -> str:
@@ -219,6 +229,81 @@ def query_live_jira(jql: str) -> str:
     return "\n".join(all_results)
 
 
+def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
+    """Execute a query directly against configured Bitbucket APIs for PRs."""
+    import requests
+    from ragdoll.config import settings
+    
+    configs_to_query = []
+    
+    if settings.bitbucket_url and settings.bitbucket_url != "https://bitbucket.example.com" and settings.bitbucket_token:
+        configs_to_query.append({
+            "name": "default",
+            "url": settings.bitbucket_url,
+            "user": settings.bitbucket_user,
+            "token": settings.bitbucket_token,
+            "auth_method": settings.bitbucket_auth_method,
+        })
+        
+    if settings.bitbucket_servers:
+        for name, cfg in settings.bitbucket_servers.items():
+            url = cfg.get("url", settings.bitbucket_url)
+            if url == "https://bitbucket.example.com":
+                continue
+            if any(c["url"] == url for c in configs_to_query):
+                continue
+            configs_to_query.append({
+                "name": name,
+                "url": url,
+                "user": cfg.get("user", settings.bitbucket_user),
+                "token": cfg.get("token", settings.bitbucket_token),
+                "auth_method": cfg.get("auth_method", settings.bitbucket_auth_method),
+            })
+
+    all_results = []
+    for cfg in configs_to_query:
+        server_url = cfg["url"]
+        if server_url.endswith("/"):
+            server_url = server_url[:-1]
+            
+        headers = {"Accept": "application/json"}
+        if cfg["auth_method"] == "pat":
+            headers["Authorization"] = f"Bearer {cfg['token']}"
+        elif cfg["auth_method"] == "basic" and cfg["user"]:
+            import base64
+            auth = base64.b64encode(f"{cfg['user']}:{cfg['token']}".encode()).decode()
+            headers["Authorization"] = f"Basic {auth}"
+            
+        prs_endpoint = f"{server_url}/rest/api/1.0/projects/{project}/repos/{repo}/pull-requests"
+        params = {"state": state, "limit": 10}
+        
+        try:
+            resp = requests.get(prs_endpoint, headers=headers, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            prs = data.get("values", [])
+            
+            clean_url = server_url.replace("https://", "").replace("http://", "")
+            if prs:
+                all_results.append(f"### Results from {cfg['name']} ({clean_url}) for {project}/{repo}:")
+                for pr in prs:
+                    pr_id = pr.get("id")
+                    title = pr.get("title")
+                    pr_state = pr.get("state")
+                    author_dict = pr.get("author", {}).get("user", {})
+                    author = author_dict.get("displayName") or author_dict.get("name") or "Unknown"
+                    all_results.append(f"- PR-{pr_id} ({pr_state}): {title} | Author: {author}")
+            else:
+                all_results.append(f"### Results from {cfg['name']} ({clean_url}):\nNo PRs found for {project}/{repo} in state {state}.")
+        except Exception as e:
+            clean_url = server_url.replace("https://", "").replace("http://", "")
+            all_results.append(f"### Results from {cfg['name']} ({clean_url}):\nFailed to query Bitbucket: {str(e)}")
+            
+    if not all_results:
+        return "No PRs found across any configured Bitbucket servers."
+    return "\n".join(all_results)
+
+
 def chat_with_context(
     messages: list[dict[str, str]],
     top_k: int | None = None,
@@ -251,7 +336,7 @@ def chat_with_context(
             logger.warning("Intent classification failed: %s", e)
             intent = "KNOWLEDGE"
             
-        if "DATABASE" in intent:
+        if "JIRA_DATABASE" in intent or ("DATABASE" in intent and "BITBUCKET" not in intent):
             logger.info("Routing query to Live JIRA Database...")
             try:
                 jql_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=user_query))])
@@ -264,6 +349,25 @@ def chat_with_context(
             except Exception as e:
                 logger.error("JQL Generation failed: %s", e)
                 system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live database.)"
+                
+        elif "BITBUCKET_DATABASE" in intent:
+            logger.info("Routing query to Live Bitbucket Database...")
+            try:
+                bb_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=BITBUCKET_PARAM_GENERATOR_PROMPT.format(question=user_query))])
+                params_str = bb_msg.message.content.strip()
+                
+                project, repo, state = "UNKNOWN", "UNKNOWN", "ALL"
+                parts = [p.strip() for p in params_str.split(",")]
+                if len(parts) >= 1: project = parts[0]
+                if len(parts) >= 2: repo = parts[1]
+                if len(parts) >= 3: state = parts[2]
+                
+                logger.info("Parsed Bitbucket params: project=%s, repo=%s, state=%s", project, repo, state)
+                live_results = query_live_bitbucket(project, repo, state)
+                system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+            except Exception as e:
+                logger.error("Bitbucket Parameter Parsing failed: %s", e)
+                system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live Bitbucket database.)"
                 
         else:
             # Retrieve context.
