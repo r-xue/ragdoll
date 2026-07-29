@@ -215,6 +215,25 @@ def ingest_code(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: i
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
+@ingest.command("git")
+@click.argument("repo_path", type=click.Path(exists=True))
+@click.option("--max-commits", type=int, default=1000, help="Max commits to fetch.")
+def ingest_git_cmd(repo_path: str, max_commits: int) -> None:
+    """Ingest git commit history from a local repository."""
+    from ragdoll.ingest.git import ingest_git as _ingest_git
+    from ragdoll.store.vectordb import count
+    
+    with console.status(f"[bold cyan]Fetching git commits from {repo_path}…"):
+        n = _ingest_git(repo_path=repo_path, max_commits=max_commits)
+        
+    if n == 0:
+        console.print("[yellow]No commits found or ingested.[/yellow]")
+        return
+        
+    console.print(f"  💾 Stored [green]{n}[/green] commit(s) in vector DB")
+    console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+
+
 # ── Search command ─────────────────────────────────────────────────────
 
 @cli.command()
