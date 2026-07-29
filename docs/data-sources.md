@@ -1,6 +1,6 @@
 # Data Sources
 
-Ragdoll supports three data source types, each with a specialised ingestion
+Ragdoll supports five data source types, each with a specialised ingestion
 strategy designed to preserve semantic meaning.
 
 ## PDF Documents

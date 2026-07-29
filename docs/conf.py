@@ -9,7 +9,7 @@ import importlib.metadata
 # -- Project information -----------------------------------------------------
 
 project = "Ragdoll"
-copyright = f"{datetime.date.today().year}, Rui Xue"
+copyright = f"{datetime.date.today().year}, /rx"
 author = "Rui Xue"
 release = importlib.metadata.version("ragdoll-ai")
 

@@ -2,7 +2,7 @@
 
 ## Ingesting Data
 
-Ragdoll supports three data sources. Each ingestion pipeline extracts text,
+Ragdoll supports five data sources. Each ingestion pipeline extracts text,
 chunks it, computes embeddings via Ollama, and stores them in ChromaDB.
 
 ### PDF Documents
