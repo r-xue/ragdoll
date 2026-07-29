@@ -11,6 +11,7 @@ getting-started
 usage
 web-ui
 configuration
+mcp-integration
 ```
 
 ```{toctree}

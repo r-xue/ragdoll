@@ -407,6 +407,22 @@ def serve(host: str, port: int) -> None:
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--transport", type=click.Choice(["stdio", "sse"]), default="stdio", help="Transport protocol to use (stdio for local, sse for network).")
+@click.option("--port", type=int, default=8000, help="Port to run the SSE server on (only used if transport=sse).")
+def mcp(transport: str, port: int) -> None:
+    """Start the Model Context Protocol (MCP) server for Ragdoll."""
+    try:
+        from ragdoll.mcp import main as run_mcp
+        if transport == "sse":
+            console.print(f"[bold green]Starting Ragdoll MCP Server via SSE on port {port}[/bold green]")
+        run_mcp(transport=transport, port=port)
+    except ImportError:
+        console.print("[bold red]Error:[/bold red] mcp package is not installed.")
+        import sys
+        sys.exit(1)
+
+
 # ── Status command ─────────────────────────────────────────────────────
 
 @cli.command()
