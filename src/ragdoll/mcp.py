@@ -1,6 +1,6 @@
 """Model Context Protocol (MCP) server for Ragdoll."""
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from ragdoll.query.retriever import search
 
 # Create the MCP server
