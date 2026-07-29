@@ -1,6 +1,6 @@
 # Model Context Protocol (MCP) Integration
 
-Ragdoll natively supports the **Model Context Protocol (MCP)**, allowing you to expose your local vector database as a set of dynamic tools for external AI clients like Claude Desktop, Cursor, and VS Code (via extensions).
+Ragdoll natively supports the **Model Context Protocol (MCP)**, allowing you to expose your local vector database as a set of dynamic tools for external AI clients like Claude Desktop, VS Code, and Copilot.
 
 When running as an MCP server, Ragdoll provides a `search_ragdoll` tool that external LLMs can use to search for context from your ingested Jira tickets, Bitbucket PRs, Git commits, Code, and PDFs.
 

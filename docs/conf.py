@@ -23,6 +23,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "myst_parser",
     "sphinx_copybutton",
+    "sphinxcontrib.mermaid",
 ]
 
 # MyST-Parser settings (allows Markdown in Sphinx).

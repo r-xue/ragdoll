@@ -5,25 +5,73 @@
 Ragdoll is a **Retrieval-Augmented Generation (RAG)** system with two main
 phases: **ingestion** (offline) and **query** (online).
 
-```
-                         Ingestion Pipeline
-                         ──────────────────
-  ┌──────────┐
-  │ PDF      │──┐
-  │ JIRA     │──┼──→  Ingestor  →  Chunker  →  Embedder  →  ChromaDB
-  │ Code     │──┘               (AST-aware)   (Ollama)     (persistent)
-  └──────────┘
+```{mermaid}
+graph LR
+    classDef ai fill:#e1d5e7,stroke:#9673a6,stroke-width:2px,color:#000;
 
-                         Query Pipeline
-                         ──────────────
-  ┌──────────┐
-  │ CLI      │──→  Embed query  →  Retriever  →  Context chunks
-  │ Chat     │                                        │
-  └──────────┘                                        ▼
-                                               LLM (Ollama)
-                                                     │
-                                                     ▼
-                                              Streamed answer
+    subgraph Sources
+        direction TB
+        PDF[PDF]
+        JIRA[JIRA]
+        BB[Bitbucket PRs]
+        GIT[Git Commits]
+        CODE[Source Code]
+    end
+    
+    subgraph Ingestion Pipeline
+        direction LR
+        INGEST[Ingestor]
+        CHUNK[Chunker<br/>AST-aware]
+        EMBED[Embedder<br/>Ollama]
+        DB[(ChromaDB<br/>persistent)]
+    end
+    
+    PDF --> INGEST
+    JIRA --> INGEST
+    BB --> INGEST
+    GIT --> INGEST
+    CODE --> INGEST
+    
+    INGEST --> CHUNK
+    CHUNK --> EMBED
+    EMBED --> DB
+
+    class EMBED ai;
+```
+
+```{mermaid}
+graph LR
+    classDef ai fill:#e1d5e7,stroke:#9673a6,stroke-width:2px,color:#000;
+
+    subgraph Interfaces
+        direction TB
+        CLI[CLI / Terminal]
+        WEB[Gradio Web UI]
+        MCP[MCP Server<br/>Claude/VS Code]
+        API[REST API / Open-WebUI]
+    end
+
+    subgraph Query Engine
+        direction LR
+        RET[Retriever]
+        EMB[Embedder<br/>Ollama]
+        DB[(ChromaDB)]
+        CTX[[Context]]
+        LLM((LLM<br/>Ollama))
+    end
+
+    CLI --> RET
+    WEB --> RET
+    MCP --> RET
+    API --> RET
+
+    RET --> EMB
+    EMB --> DB
+    DB --> CTX
+    CTX --> LLM
+    LLM --> OUT[/Streamed Answer/]
+
+    class EMB,LLM ai;
 ```
 
 ## Module Map
@@ -89,9 +137,11 @@ is stored alongside the embedding for filtering.
 
 ### 1. Retrieval
 
-1. The query text is embedded using the same model
-2. ChromaDB finds the top-K nearest chunks by cosine similarity
-3. Optional metadata filtering narrows results to a specific source type
+The **Retriever** (`VectorIndexAutoRetriever`) uses a combination of LLM reasoning and mathematical search to find the most relevant information:
+
+1. **Query Parsing**: The generative LLM is first used to analyze your query and extract any relevant metadata filters (e.g., date ranges, Jira projects, or authors).
+2. **Embedding the Query**: The user's query text is sent to an **Embedding Model** (e.g., `nomic-embed-text`) which translates the text into a mathematical vector.
+3. **Vector Search**: ChromaDB performs a "nearest neighbor" mathematical search to find the top-K chunks whose vectors are closest to the query's vector, applying any filters extracted in step 1.
 
 ### 2. Generation
 
@@ -101,23 +151,6 @@ Retrieved chunks are formatted as context and injected into an LLM prompt:
 - **Summarize** — single-turn generation with a summarization prompt
 - **Chat** — multi-turn conversation with accumulated context
 
-## Data Flow
-
-```
-User input
-  │
-  ▼
-embed(query) ──→ ChromaDB.query(top_k=20) ──→ [chunk₁, chunk₂, ..., chunk₂₀]
-                                                       │
-                                                       ▼
-                                              Format as context
-                                                       │
-                                                       ▼
-                                              LLM.generate(context + prompt)
-                                                       │
-                                                       ▼
-                                              Stream tokens to terminal
-```
 
 ## Local Storage Layout
 
