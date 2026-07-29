@@ -21,6 +21,7 @@ dependencies = [
     "pytest",
     "fastapi",
     "uvicorn",
+    "mcp>=1.0,<2.0",
     "gradio", "llama-index", "llama-index-vector-stores-chroma", "llama-index-llms-ollama", "llama-index-embeddings-ollama", "llama-index-readers-jira", "llama-index-readers-file",
 ]
 
@@ -62,7 +63,6 @@ docs = { cmd = "sphinx-build -b html docs docs/_build/html", description = "Buil
 python = "3.12.*"
 gradio = "*"
 fastapi = "*"
-uvicorn = "*"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

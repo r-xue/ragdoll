@@ -6,8 +6,17 @@ A fully-local RAG system that ingests JIRA tickets, PDF documents, and Python
 source code, indexes them for semantic search, and connects to a local LLM via
 [Ollama](https://ollama.ai) for interactive Q&A, summarization, and chat.
 
-> **Privacy-first:** All data stays on your machine — nothing is sent to
-> external services.
+> **Privacy-first:** All data stays on your machine — nothing is sent to external services by default.
+
+## Key Features
+
+- **Multi-source ingestion** — PDF, JIRA, Bitbucket, and Python code (AST-parsed)
+- **Semantic search** — ChromaDB vector store with cosine similarity
+- **Local LLM** — Ollama-powered embedding and generation
+- **Interactive chat** — Multi-turn RAG chat with persistent history
+- **MCP Server** — First-class support for the Model Context Protocol (stdio & sse). *(Note: If you connect a cloud-based AI client to this MCP server, the search results it retrieves will be sent to that external AI provider).*
+- **Privacy-first** — Everything runs locally; no external API calls
+- **Flexible configuration** — 4-layer precedence (env → project → user → defaults)
 
 ## Prerequisites
 
