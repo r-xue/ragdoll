@@ -32,6 +32,7 @@ docs = [
     "furo",
     "myst-parser >= 3.0",
     "sphinx-autodoc-typehints",
+    "sphinx-copybutton",
 ]
 
 [project.scripts]
@@ -52,6 +53,7 @@ sphinx = ">=7.0"
 furo = "*"
 myst-parser = ">=3.0"
 sphinx-autodoc-typehints = "*"
+sphinx-copybutton = "*"
 
 [tool.pixi.tasks]
 ragdoll = "ragdoll"
