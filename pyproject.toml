@@ -21,7 +21,8 @@ dependencies = [
     "pytest",
     "fastapi",
     "uvicorn",
-    "mcp>=1.0,<2.0",
+    "mcp>=2.0",
+    "fastmcp",
     "gradio", "llama-index", "llama-index-vector-stores-chroma", "llama-index-llms-ollama", "llama-index-embeddings-ollama", "llama-index-readers-jira", "llama-index-readers-file",
 ]
 
