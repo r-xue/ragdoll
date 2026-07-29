@@ -1,29 +1,79 @@
-# Architecture
+# How it Works
 
 ## System Overview
 
 Ragdoll is a **Retrieval-Augmented Generation (RAG)** system with two main
 phases: **ingestion** (offline) and **query** (online).
 
-```
-                         Ingestion Pipeline
-                         ──────────────────
-  ┌──────────┐
-  │ PDF      │──┐
-  │ JIRA     │──┼──→  Ingestor  →  Chunker  →  Embedder  →  ChromaDB
-  │ Code     │──┘               (AST-aware)   (Ollama)     (persistent)
-  └──────────┘
+```{mermaid}
+graph LR
+    classDef ai fill:#ffeb99,stroke:#ff9900,stroke-width:3px,color:#000;
 
-                         Query Pipeline
-                         ──────────────
-  ┌──────────┐
-  │ CLI      │──→  Embed query  →  Retriever  →  Context chunks
-  │ Chat     │                                        │
-  └──────────┘                                        ▼
-                                               LLM (Ollama)
-                                                     │
-                                                     ▼
-                                              Streamed answer
+    subgraph Sources
+        direction TB
+        PDF[PDF]
+        JIRA[JIRA]
+        BB[Bitbucket PRs]
+        GIT[Git Commits]
+        CODE[Source Code]
+    end
+    
+    subgraph Ingestion Pipeline
+        direction LR
+        INGEST[Ingestor]
+        CHUNK[Chunker<br/>AST-aware]
+        EMBED[Embedder<br/>Ollama]
+        DB[(ChromaDB<br/>persistent)]
+    end
+    
+    PDF --> INGEST
+    JIRA --> INGEST
+    BB --> INGEST
+    GIT --> INGEST
+    CODE --> INGEST
+    
+    INGEST --> CHUNK
+    CHUNK --> EMBED
+    EMBED --> DB
+
+    class EMBED ai;
+```
+
+```{mermaid}
+graph LR
+    classDef ai fill:#ffeb99,stroke:#ff9900,stroke-width:3px,color:#000;
+
+    subgraph Interfaces
+        direction TB
+        CLI[CLI / Terminal]
+        WEB[Gradio Web UI]
+        MCP[MCP Server<br/>Claude/VS Code]
+        API[REST API / Open-WebUI]
+    end
+
+    subgraph Query Engine
+        direction LR
+        ROUTER{Intent Router via LLM<br/>Ollama}
+        RET[Retriever]
+        EMB[Embedder<br/>Ollama]
+        DB[(ChromaDB)]
+        LIVE[(Live APIs<br/>Jira/Bitbucket)]
+        CTX[[Context]]
+        LLM((LLM<br/>Ollama))
+    end
+
+    CLI --> ROUTER
+    WEB --> ROUTER
+    MCP --> ROUTER
+    API --> ROUTER
+
+    ROUTER -->|Knowledge| RET
+    RET --> EMB --> DB --> CTX
+    ROUTER -->|Live Query| LIVE --> CTX
+
+    CTX --> LLM --> OUT[/Streamed Answer/]
+
+    class EMB,LLM,ROUTER ai;
 ```
 
 ## Module Map
@@ -67,7 +117,7 @@ then sentences, then words, to preserve semantic coherence.
 
 - Default chunk size: **1000 characters**
 - Default overlap: **200 characters**
-- Code chunks respect function/class boundaries from AST parsing
+- **AST-Aware Code Chunking**: When processing source code, the standard character-splitter is bypassed. Instead, Ragdoll parses the language's Abstract Syntax Tree (AST) to split code precisely at function and class boundaries. This ensures the LLM receives unbroken logical blocks of code, rather than arbitrary text slices that might cut a loop or function in half.
 
 ### 3. Embedding
 
@@ -87,13 +137,22 @@ is stored alongside the embedding for filtering.
 
 ## Query Pipeline
 
-### 1. Retrieval
+### 1. Intent Routing
 
-1. The query text is embedded using the same model
-2. ChromaDB finds the top-K nearest chunks by cosine similarity
-3. Optional metadata filtering narrows results to a specific source type
+When a query is received, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general knowledge question (requiring vector search) or asking for a list/aggregation of items from a live database (like Jira tickets or Bitbucket PRs).
 
-### 2. Generation
+- **Knowledge Queries**: Routed to the standard vector database (ChromaDB) via the Retriever.
+- **Live Queries**: The LLM automatically translates the natural language into an API query (like Jira JQL) and fetches results directly from the live external API, skipping the vector database entirely.
+
+### 2. Retrieval (Knowledge Queries)
+
+If the intent is classified as general knowledge, the **Retriever** (`VectorIndexAutoRetriever`) uses a combination of LLM reasoning and mathematical search to find the most relevant information:
+
+1. **Query Parsing**: The generative LLM is first used to analyze your query and extract any relevant metadata filters (e.g., date ranges, Jira projects, or authors).
+2. **Embedding the Query**: The user's query text is sent to an **Embedding Model** (e.g., `nomic-embed-text`) which translates the text into a mathematical vector.
+3. **Vector Search**: ChromaDB performs a "nearest neighbor" mathematical search to find the top-K chunks whose vectors are closest to the query's vector, applying any filters extracted in step 1.
+
+### 3. Generation
 
 Retrieved chunks are formatted as context and injected into an LLM prompt:
 
@@ -101,23 +160,6 @@ Retrieved chunks are formatted as context and injected into an LLM prompt:
 - **Summarize** — single-turn generation with a summarization prompt
 - **Chat** — multi-turn conversation with accumulated context
 
-## Data Flow
-
-```
-User input
-  │
-  ▼
-embed(query) ──→ ChromaDB.query(top_k=20) ──→ [chunk₁, chunk₂, ..., chunk₂₀]
-                                                       │
-                                                       ▼
-                                              Format as context
-                                                       │
-                                                       ▼
-                                              LLM.generate(context + prompt)
-                                                       │
-                                                       ▼
-                                              Stream tokens to terminal
-```
 
 ## Local Storage Layout
 
