@@ -155,6 +155,9 @@ Fetches pull requests and their activity threads from an on-premise Bitbucket Se
 - Author information
 - A chronological thread of all comments, approvals, and merges
 
+> [!NOTE]
+> **Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+
 ### Example
 
 ```bash
