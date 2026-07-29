@@ -43,6 +43,7 @@ pixi run ragdoll chat --source code -n 12
 - **Full line editing** — backspace, arrow keys, Home/End all work
 - **Source filtering** — `--source` limits retrieval to a specific data source
 - **Streaming** — responses are streamed token-by-token
+- **Live Database Querying** — ask questions like *"List all open bugs for the PIPE project"* or *"Show me PRs by rxue"*. The Intent Router will detect this and automatically query the live Jira/Bitbucket APIs instead of the vector database.
 
 ### Chat Commands
 

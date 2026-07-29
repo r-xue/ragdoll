@@ -53,25 +53,32 @@ graph LR
 
     subgraph Query Engine
         direction LR
+        ROUTER{Intent Router}
         RET[Retriever]
         EMB[Embedder<br/>Ollama]
         DB[(ChromaDB)]
+        LIVE[(Live APIs<br/>Jira/Bitbucket)]
         CTX[[Context]]
         LLM((LLM<br/>Ollama))
     end
 
-    CLI --> RET
-    WEB --> RET
-    MCP --> RET
-    API --> RET
+    CLI --> ROUTER
+    WEB --> ROUTER
+    MCP --> ROUTER
+    API --> ROUTER
 
+    ROUTER -->|Knowledge| RET
     RET --> EMB
     EMB --> DB
     DB --> CTX
+    
+    ROUTER -->|Live Query| LIVE
+    LIVE --> CTX
+
     CTX --> LLM
     LLM --> OUT[/Streamed Answer/]
 
-    class EMB,LLM ai;
+    class EMB,LLM,ROUTER ai;
 ```
 
 ## Module Map
@@ -135,15 +142,22 @@ is stored alongside the embedding for filtering.
 
 ## Query Pipeline
 
-### 1. Retrieval
+### 1. Intent Routing
 
-The **Retriever** (`VectorIndexAutoRetriever`) uses a combination of LLM reasoning and mathematical search to find the most relevant information:
+When a query is received, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general knowledge question (requiring vector search) or asking for a list/aggregation of items from a live database (like Jira tickets or Bitbucket PRs).
+
+- **Knowledge Queries**: Routed to the standard vector database (ChromaDB) via the Retriever.
+- **Live Queries**: The LLM automatically translates the natural language into an API query (like Jira JQL) and fetches results directly from the live external API, skipping the vector database entirely.
+
+### 2. Retrieval (Knowledge Queries)
+
+If the intent is classified as general knowledge, the **Retriever** (`VectorIndexAutoRetriever`) uses a combination of LLM reasoning and mathematical search to find the most relevant information:
 
 1. **Query Parsing**: The generative LLM is first used to analyze your query and extract any relevant metadata filters (e.g., date ranges, Jira projects, or authors).
 2. **Embedding the Query**: The user's query text is sent to an **Embedding Model** (e.g., `nomic-embed-text`) which translates the text into a mathematical vector.
 3. **Vector Search**: ChromaDB performs a "nearest neighbor" mathematical search to find the top-K chunks whose vectors are closest to the query's vector, applying any filters extracted in step 1.
 
-### 2. Generation
+### 3. Generation
 
 Retrieved chunks are formatted as context and injected into an LLM prompt:
 
