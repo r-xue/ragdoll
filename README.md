@@ -186,7 +186,7 @@ CLI / Chat  →  Embed query  →  Retriever  ←──────────�
 
 ## Documentation
 
-Full documentation is hosted at **[ragdoll-ai.readthedocs.io](https://ragdoll-ai.readthedocs.io/)**.
+Full documentation is hosted at **[ragdoll.readthedocs.io](https://ragdoll.readthedocs.io/)**.
 
 You can also build the documentation locally from the `docs/` directory using Sphinx:
 

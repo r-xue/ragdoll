@@ -248,6 +248,45 @@ pixi run ragdoll ingest code ./src/
 pixi run ragdoll ingest code ./src/ragdoll/query/rag.py
 ```
 
+## Git Repository History
+
+**Module:** `ragdoll.ingest.git`
+
+Parses a local git repository to ingest commit history across all branches and tags. This allows the LLM to understand when features were introduced, why code was changed, and how different branches relate to one another.
+
+### Extraction Strategy
+
+Using standard git CLI commands, it extracts each commit into a `Document` containing:
+- Commit Hash and Parent Hashes
+- Branch and Tag References (e.g., `HEAD -> main`, `origin/feature-branch`)
+- Author Name and Date
+- Commit Subject and Body
+
+> [!TIP]
+> Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
+
+### Extracted Metadata
+
+| Metadata Key | Type | Description |
+|---|---|---|
+| `repo_path` | `str` | Absolute path to the local repository |
+| `commit_hash` | `str` | SHA-1 commit hash |
+| `parents` | `str` | Space-separated parent hashes |
+| `refs` | `str` | Associated branch/tag references |
+| `author` | `str` | Author's name |
+| `subject` | `str` | Commit subject line |
+| `created_at_ts` | `float` | Unix timestamp of the commit |
+
+### Example
+
+```bash
+# Ingest the last 1000 commits from a local repo
+pixi run ragdoll ingest git /path/to/local/repo
+
+# Ingest up to 5000 commits
+pixi run ragdoll ingest git /path/to/local/repo --max-commits 5000
+```
+
 ## Source Filtering
 
 All query commands support `--source` to filter retrieved chunks:
@@ -256,7 +295,8 @@ All query commands support `--source` to filter retrieved chunks:
 pixi run ragdoll search "tclean" --source jira
 pixi run ragdoll summarize "calibration" --source pdf
 pixi run ragdoll chat --source code
+pixi run ragdoll search "bugfix" --source git
 ```
 
 This filters on the `source` metadata field in ChromaDB, which is set to
-`"pdf"`, `"jira"`, or `"code"` during ingestion.
+`"pdf"`, `"jira"`, `"bitbucket"`, `"code"`, or `"git"` during ingestion.
