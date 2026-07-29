@@ -204,7 +204,9 @@ pixi run ragdoll ingest bitbucket --server internal --project PROJ --repo backen
 **Module:** `ragdoll.ingest.code`
 
 Uses Python's built-in `ast` module to parse source files into semantically
-meaningful units rather than blind text splitting.
+meaningful units rather than blind text splitting. 
+
+When you use a traditional text chunker, it slices a document by character count, which frequently cuts loops, conditionals, and functions in half. By parsing the **Abstract Syntax Tree (AST)** instead, Ragdoll ensures that the LLM is given complete, unbroken functions and classes. This preserves the semantic context of the code.
 
 ### Extraction Strategy
 

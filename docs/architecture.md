@@ -7,7 +7,7 @@ phases: **ingestion** (offline) and **query** (online).
 
 ```{mermaid}
 graph LR
-    classDef ai fill:#e1d5e7,stroke:#9673a6,stroke-width:2px,color:#000;
+    classDef ai fill:#ffeb99,stroke:#ff9900,stroke-width:3px,color:#000;
 
     subgraph Sources
         direction TB
@@ -41,7 +41,7 @@ graph LR
 
 ```{mermaid}
 graph LR
-    classDef ai fill:#e1d5e7,stroke:#9673a6,stroke-width:2px,color:#000;
+    classDef ai fill:#ffeb99,stroke:#ff9900,stroke-width:3px,color:#000;
 
     subgraph Interfaces
         direction TB
@@ -53,7 +53,7 @@ graph LR
 
     subgraph Query Engine
         direction LR
-        ROUTER{Intent Router}
+        ROUTER{Intent Router via LLM<br/>Ollama}
         RET[Retriever]
         EMB[Embedder<br/>Ollama]
         DB[(ChromaDB)]
@@ -68,15 +68,10 @@ graph LR
     API --> ROUTER
 
     ROUTER -->|Knowledge| RET
-    RET --> EMB
-    EMB --> DB
-    DB --> CTX
-    
-    ROUTER -->|Live Query| LIVE
-    LIVE --> CTX
+    RET --> EMB --> DB --> CTX
+    ROUTER -->|Live Query| LIVE --> CTX
 
-    CTX --> LLM
-    LLM --> OUT[/Streamed Answer/]
+    CTX --> LLM --> OUT[/Streamed Answer/]
 
     class EMB,LLM,ROUTER ai;
 ```
@@ -122,7 +117,7 @@ then sentences, then words, to preserve semantic coherence.
 
 - Default chunk size: **1000 characters**
 - Default overlap: **200 characters**
-- Code chunks respect function/class boundaries from AST parsing
+- **AST-Aware Code Chunking**: When processing source code, the standard character-splitter is bypassed. Instead, Ragdoll parses the language's Abstract Syntax Tree (AST) to split code precisely at function and class boundaries. This ensures the LLM receives unbroken logical blocks of code, rather than arbitrary text slices that might cut a loop or function in half.
 
 ### 3. Embedding
 
