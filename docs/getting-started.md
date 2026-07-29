@@ -72,6 +72,16 @@ url = "https://secondary-jira.example.com"
 user = "your.username"
 token = "YOUR_PERSONAL_ACCESS_TOKEN"
 auth_method = "pat"
+
+# ==========================================
+# 3. Bitbucket Server Configurations
+# ==========================================
+
+[bitbucket_servers.internal]
+url = "https://bitbucket.example.com"
+user = "your.username"
+token = "YOUR_HTTP_ACCESS_TOKEN"
+auth_method = "pat"
 EOF
 chmod 600 ~/.ragdoll/config.toml
 ```

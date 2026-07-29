@@ -55,12 +55,16 @@ def search(
 
     # Define metadata fields for the auto-retriever so it knows how to filter
     vector_store_info = VectorStoreInfo(
-        content_info='Jira tickets and PDF technical documentation. For date filtering, ONLY use < or > on the created_at_ts and updated_at_ts float timestamp fields (convert user dates to Unix timestamps). DO NOT use string date fields.',
+        content_info='Jira tickets, Bitbucket PRs, and PDF technical documentation. For date filtering, ONLY use < or > on the created_at_ts and updated_at_ts float timestamp fields (convert user dates to Unix timestamps). DO NOT use string date fields.',
         metadata_info=[
-            MetadataInfo(name='source', type='str', description="Source of the data ('jira' or 'pdf')"),
+            MetadataInfo(name='source', type='str', description="Source of the data ('jira', 'bitbucket', or 'pdf')"),
             MetadataInfo(name='key', type='str', description='JIRA issue key (e.g. PIPE-1234)'),
-            MetadataInfo(name='status', type='str', description='Status of the Jira ticket'),
-            MetadataInfo(name='project', type='str', description='Project name for the Jira ticket'),
+            MetadataInfo(name='repo', type='str', description='Bitbucket repository slug'),
+            MetadataInfo(name='pr_id', type='str', description='Bitbucket Pull Request ID'),
+            MetadataInfo(name='author', type='str', description='Author of the PR or Ticket'),
+            MetadataInfo(name='title', type='str', description='Title or summary of the ticket/PR'),
+            MetadataInfo(name='status', type='str', description='Status of the Jira ticket or Bitbucket PR'),
+            MetadataInfo(name='project', type='str', description='Project name for the Jira ticket or Bitbucket PR'),
             MetadataInfo(name='assignee', type='str', description='Assignee of the Jira ticket'),
             MetadataInfo(name='reporter', type='str', description='Reporter who created the ticket'),
             MetadataInfo(name='issue_type', type='str', description='Issue type (Bug, Story, Task, Epic, etc.)'),
@@ -74,8 +78,8 @@ def search(
             MetadataInfo(name='linked_issues', type='str',
                          description='Comma-separated linked issue keys and relationship types'),
             MetadataInfo(name='sprint', type='str', description='Sprint name'),
-            MetadataInfo(name='created_at_ts', type='float', description='Unix timestamp of when the ticket was created'),
-            MetadataInfo(name='updated_at_ts', type='float', description='Unix timestamp of when the ticket was last updated'),
+            MetadataInfo(name='created_at_ts', type='float', description='Unix timestamp of when the ticket/PR was created'),
+            MetadataInfo(name='updated_at_ts', type='float', description='Unix timestamp of when the ticket/PR was last updated'),
         ]
     )
 

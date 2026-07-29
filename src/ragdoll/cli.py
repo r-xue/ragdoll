@@ -137,6 +137,49 @@ def ingest_jira(
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
+@ingest.command("bitbucket")
+@click.option("--project", required=True, help="Bitbucket project key.")
+@click.option("--repo", required=True, help="Bitbucket repository slug.")
+@click.option("--state", default="ALL", type=click.Choice(["ALL", "OPEN", "MERGED", "DECLINED"]), help="PR state to filter.")
+@click.option("--server", type=str, default=None, help="Name of the Bitbucket server config to use.")
+@click.option("--url", default=None, help="Bitbucket server URL (overrides config).")
+@click.option("--user", default=None, help="Username (overrides config).")
+@click.option("--token", default=None, help="API token / PAT (overrides config).")
+@click.option("--auth-method", type=click.Choice(["pat", "basic"]), default=None, help="Auth method (overrides config).")
+def ingest_bitbucket_cmd(
+    project: str,
+    repo: str,
+    state: str,
+    server: str | None,
+    url: str | None,
+    user: str | None,
+    token: str | None,
+    auth_method: str | None,
+) -> None:
+    """Ingest Bitbucket Server PRs and comments."""
+    from ragdoll.ingest.bitbucket import ingest_bitbucket as _ingest_bitbucket
+    from ragdoll.store.vectordb import count
+
+    with console.status(f"[bold cyan]Fetching and embedding Bitbucket PRs from {project}/{repo}…"):
+        n = _ingest_bitbucket(
+            project=project,
+            repo=repo,
+            state=state,
+            server=server,
+            override_url=url,
+            override_user=user,
+            override_token=token,
+            override_auth_method=auth_method
+        )
+
+    if n == 0:
+        console.print("[yellow]No PRs found or ingested.[/yellow]")
+        return
+
+    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
+    console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+
+
 @ingest.command("code")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")

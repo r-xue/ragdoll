@@ -33,6 +33,11 @@ jira_url = "https://your-jira.example.com"
 jira_user = "your.user"
 jira_token = "YOUR_PAT_TOKEN"
 jira_auth_method = "pat"  # "pat" for JIRA Data Center, "basic" for Cloud
+
+bitbucket_url = "https://your-bitbucket.example.com"
+bitbucket_user = "your.user"
+bitbucket_token = "YOUR_HTTP_ACCESS_TOKEN"
+bitbucket_auth_method = "pat"
 EOF
 chmod 600 ~/.ragdoll/config.toml
 
@@ -58,6 +63,9 @@ pixi run ragdoll ingest jira \
   --url https://other-jira.example.com \
   --token OTHER_PAT \
   --jql "project = EXT AND updated >= -30d"
+
+# Ingest Bitbucket Pull Requests and comments
+pixi run ragdoll ingest bitbucket --project PROJ --repo backend --state ALL
 
 # Ingest Python source code (AST-parsed per function/class)
 pixi run ragdoll ingest code ./src/
@@ -163,6 +171,7 @@ CLI / Chat  →  Embed query  →  Retriever  ←──────────�
 |--------|--------|----------|
 | **PDF** | `ragdoll.ingest.pdf` | PyMuPDF text extraction → recursive character splitter |
 | **JIRA** | `ragdoll.ingest.jira` | REST API with JQL → structured text per issue |
+| **Bitbucket** | `ragdoll.ingest.bitbucket` | REST API → structured text per PR and comment thread |
 | **Code** | `ragdoll.ingest.code` | AST parsing → one Document per function/class/module docstring |
 
 ### Key Components
