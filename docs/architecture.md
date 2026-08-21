@@ -57,7 +57,7 @@ graph LR
         RET[Retriever]
         EMB[Embedder<br/>Ollama]
         DB[(ChromaDB)]
-        LIVE[(Live APIs<br/>Jira/Bitbucket)]
+        LIVE[(Live APIs<br/>Jira/Bitbucket/GitHub)]
         CTX[[Context]]
         LLM((LLM<br/>Ollama))
     end
@@ -106,7 +106,10 @@ Each data source has a dedicated ingestor that produces `Document` objects:
 | Source | Module | Output |
 |--------|--------|--------|
 | PDF | `ingest.pdf` | One `Document` per page (PyMuPDF) |
-| JIRA | `ingest.jira` | One `Document` per issue (structured text) |
+| JIRA | `ingest.jira` | One `Document` per issue with metadata and comments |
+| Bitbucket | `ingest.bitbucket` | One `Document` per PR with reviews and activity threads |
+| GitHub | `ingest.github` | One `Document` per Issue/PR with comments and metadata |
+| Git | `ingest.git` | One `Document` per commit with diff subject and body |
 | Code | `ingest.code` | One `Document` per function/class/module docstring (AST) |
 
 ### 2. Chunking
@@ -137,12 +140,14 @@ is stored alongside the embedding for filtering.
 
 ## Query Pipeline
 
-### 1. Intent Routing
+### 1. Intent Routing & Smart Server Targeting
 
-When a query is received, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general knowledge question (requiring vector search) or asking for a list/aggregation of items from a live database (like Jira tickets or Bitbucket PRs).
+When a query is received in interactive chat, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general conceptual/knowledge question (requiring offline vector search) or asking for a real-time list/aggregation of items from external databases.
 
-- **Knowledge Queries**: Routed to the standard vector database (ChromaDB) via the Retriever.
-- **Live Queries**: The LLM automatically translates the natural language into an API query (like Jira JQL) and fetches results directly from the live external API, skipping the vector database entirely.
+* **Knowledge Queries (`KNOWLEDGE`)**: Routed to the ChromaDB vector database via the `VectorIndexAutoRetriever`.
+* **Jira Live Queries (`JIRA_DATABASE`)**: The LLM dynamically translates natural language into a Jira JQL query. Ragdoll inspects the JQL for project keys and applies **Smart Server Routing** (matching `projects = [...]` in `config.toml`) to query only the hosting Jira instance, formatting tickets with status, type, and priority.
+* **GitHub Live Queries (`GITHUB_DATABASE`)**: The LLM extracts `owner,repo,state,type` using prompt grounding with configured repositories and `github_default_owner`, querying GitHub's `/search/issues` endpoint directly.
+* **Bitbucket Live Queries (`BITBUCKET_DATABASE`)**: The LLM extracts project and repository parameters and queries the Bitbucket REST API for active pull requests.
 
 ### 2. Retrieval (Knowledge Queries)
 

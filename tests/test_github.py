@@ -20,12 +20,12 @@ def test_build_github_document_issue():
             "body": "Reproduced on Linux x86_64.",
         }
     ]
-    doc = _build_github_document(issue, comments, owner="casangi", repo="radps-context")
+    doc = _build_github_document(issue, comments, owner="myorg", repo="myrepo")
 
-    assert doc.id_ == "github-casangi-radps-context-42"
+    assert doc.id_ == "github-myorg-myrepo-42"
     assert doc.metadata["source"] == "github"
-    assert doc.metadata["owner"] == "casangi"
-    assert doc.metadata["repo"] == "radps-context"
+    assert doc.metadata["owner"] == "myorg"
+    assert doc.metadata["repo"] == "myrepo"
     assert doc.metadata["issue_number"] == "42"
     assert doc.metadata["is_pr"] is False
     assert doc.metadata["author"] == "alice"

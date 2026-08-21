@@ -89,6 +89,7 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 |-----|------|---------|-------------|
 | `github_url` | `str` | `"https://api.github.com"` | GitHub REST API endpoint |
 | `github_token` | `str` | `""` | GitHub Personal Access Token (PAT) |
+| `github_default_owner` | `str` | `""` | Default organization or owner for unqualified repo names in chat |
 
 ### Ollama / LLM
 
@@ -114,6 +115,32 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 | `chunk_overlap` | `int` | `200` | Overlap between consecutive chunks |
 | `top_k` | `int` | `20` | Default number of chunks to retrieve |
 
+### Multi-Server GitHub & Repository Mapping
+
+You can configure public and enterprise GitHub servers in `~/.ragdoll/config.toml` along with registered `repos`:
+
+```toml
+# Default organization when owner is omitted in chat
+github_default_owner = "myorg"
+
+# Public GitHub
+[github_servers.public]
+url = "https://api.github.com"
+token = "ghp_PUBLIC_TOKEN"
+repos = ["myorg/repo1", "myorg/repo2", "myorg/repo3"]
+
+# Enterprise GitHub Server
+[github_servers.enterprise]
+url = "https://github.internal.org/api/v3"
+token = "ghp_ENTERPRISE_TOKEN"
+repos = ["internal-org/service", "internal-org/deploy-tools"]
+```
+
+#### Grounding & Disambiguation:
+* **Repository Grounding**: When you ask *"Show open PRs in repo1"*, Ragdoll automatically resolves `myorg/repo1` from your known repos list and routes directly to the `public` server.
+* **Default Owner**: If you ask about an unlisted repository without specifying an owner, Ragdoll applies `github_default_owner` automatically.
+
+
 ## JIRA Authentication
 
 ### Data Center (PAT)
@@ -138,9 +165,34 @@ jira_user = "you@example.com"
 jira_token = "YOUR_API_TOKEN"
 ```
 
-### Multiple JIRA Instances
+### Multiple JIRA Instances & Smart Project Routing
 
-The `~/.ragdoll/config.toml` file stores credentials for your **primary** JIRA
+You can configure named Jira instances in `~/.ragdoll/config.toml`. Adding an optional `projects` list enables **Smart Server Routing** for live queries:
+
+```toml
+# Primary Jira instance
+[jira_servers.primary]
+url = "https://jira.primary.example.com"
+token = "PAT_PRIMARY"
+auth_method = "pat"
+projects = ["CORE", "BACKEND", "PROJ"]
+
+# Partner / External Jira instance
+[jira_servers.partner]
+url = "https://jira.partner.example.com"
+token = "PAT_PARTNER"
+auth_method = "pat"
+projects = ["EXTERNAL", "INTEG"]
+```
+
+#### How Smart Routing Works:
+1. **Targeted Routing (Zero Probing)**: When a chat query specifies a project (e.g. *"Show bugs in CORE"*), Ragdoll parses `project = CORE` from the generated JQL and routes the request **only to the matching server** (`primary`). It will completely skip querying `partner`.
+2. **Probing Fallback**: If a server does not define a `projects` list (or if the query is a general cross-project search), Ragdoll queries all available servers. Missing-project errors on non-hosting servers are caught silently without polluting your chat terminal.
+
+
+### Ingestion from Additional Sites via CLI
+
+To ingest from additional sites on the command line:
 site. To ingest from additional sites, override the connection settings
 directly on the CLI:
 

@@ -127,7 +127,7 @@ for both auto-retrieval filtering and context display.
 
 | Metadata Key | Type | Description |
 |---|---|---|
-| `key` | `str` | Issue key (e.g. `PIPE-1234`) |
+| `key` | `str` | Issue key (e.g. `PROJ-1234`) |
 | `components` | `str` | Comma-separated component names (e.g. `hif_makeimages, hif_findcont`) |
 | `fix_versions` | `str` | Target fix version names |
 | `affects_versions` | `str` | Affected version names |

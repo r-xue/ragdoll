@@ -63,8 +63,9 @@ to external services.
 ### Key Features
 
 - **Multi-source ingestion** — PDF, JIRA, Bitbucket, GitHub, Git, and Python code
-- **Semantic search** — ChromaDB vector store with cosine similarity
+- **Live Database Querying** — Automatic Intent Routing between ChromaDB vector search and real-time Jira JQL, GitHub Search, and Bitbucket APIs
+- **Semantic search** — ChromaDB vector store with cosine similarity and metadata filtering
 - **Local LLM** — Ollama-powered embedding and generation
-- **Interactive chat** — Multi-turn RAG chat with persistent history
+- **Interactive chat** — Multi-turn RAG chat with persistent history and prompt grounding
 - **Privacy-first** — Everything runs locally; no external API calls
 - **Flexible configuration** — 4-layer precedence (env → project → user → defaults)

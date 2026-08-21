@@ -109,6 +109,7 @@ class Settings(BaseSettings):
                 "token": cfg.get("token", self.jira_token),
                 "batch_size": cfg.get("batch_size", self.jira_batch_size),
                 "auth_method": cfg.get("auth_method", self.jira_auth_method),
+                "projects": cfg.get("projects", []),
             }
         return {
             "url": self.jira_url,
@@ -116,6 +117,7 @@ class Settings(BaseSettings):
             "token": self.jira_token,
             "batch_size": self.jira_batch_size,
             "auth_method": self.jira_auth_method,
+            "projects": [],
         }
 
     # ── BITBUCKET ──────────────────────────────────────────────────────
@@ -147,6 +149,9 @@ class Settings(BaseSettings):
     github_url: str = "https://api.github.com"
     github_token: str = ""
 
+    github_default_owner: str = ""
+    github_repos: list[str] = Field(default_factory=list)
+
     def get_github_config(self, server_name: str | None = None) -> dict:
         """Get the active GitHub configuration."""
         if server_name and server_name in self.github_servers:
@@ -154,11 +159,26 @@ class Settings(BaseSettings):
             return {
                 "url": cfg.get("url", self.github_url),
                 "token": cfg.get("token", self.github_token),
+                "default_owner": cfg.get("default_owner", self.github_default_owner),
+                "repos": cfg.get("repos", []),
             }
         return {
             "url": self.github_url,
             "token": self.github_token,
+            "default_owner": self.github_default_owner,
+            "repos": self.github_repos,
         }
+
+    def get_all_github_repos(self) -> list[str]:
+        """Get list of all tracked GitHub repositories across all servers."""
+        all_repos = list(self.github_repos)
+        for name, cfg in self.github_servers.items():
+            repos = cfg.get("repos", [])
+            if isinstance(repos, list):
+                all_repos.extend(repos)
+            elif isinstance(repos, str):
+                all_repos.extend([r.strip() for r in repos.split(",") if r.strip()])
+        return list(dict.fromkeys(all_repos))
 
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"

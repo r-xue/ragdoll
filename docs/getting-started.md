@@ -66,12 +66,14 @@ url = "https://primary-jira.example.com"
 user = "your.username"
 token = "YOUR_PERSONAL_ACCESS_TOKEN"
 auth_method = "pat"
+projects = ["CORE", "BACKEND"]
 
 [jira_servers.secondary]
 url = "https://secondary-jira.example.com"
 user = "your.username"
 token = "YOUR_PERSONAL_ACCESS_TOKEN"
 auth_method = "pat"
+projects = ["EXTERNAL", "TOOLS"]
 
 # ==========================================
 # 3. Bitbucket Server Configurations
@@ -87,10 +89,13 @@ auth_method = "pat"
 # 4. GitHub Configurations
 # ==========================================
 github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+github_default_owner = "myorg"
+github_repos = ["myorg/repo1", "myorg/repo2"]
 
 [github_servers.enterprise]
 url = "https://github.internal.mycompany.com/api/v3"
 token = "YOUR_ENTERPRISE_TOKEN"
+repos = ["internal-org/service"]
 EOF
 chmod 600 ~/.ragdoll/config.toml
 ```

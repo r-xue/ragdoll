@@ -12,6 +12,7 @@ import re
 
 from llama_index.core import Settings
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
+from ragdoll.config import settings
 from ragdoll.query.retriever import SearchResult, search
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,11 @@ Params:"""
 
 GITHUB_PARAM_GENERATOR_PROMPT = """\
 You are an expert GitHub administrator.
+Known repositories in this environment: {known_repos}
+Default organization/owner: {default_owner}
+
 Extract the owner, repository, state (open, closed, or all), and type (issue, pr, or all) from the user's request.
+If the user specifies only a repository name, match it against the known repositories list or use the default organization/owner.
 Return ONLY a comma-separated string: owner,repo,state,type
 If a value is not specified, guess a reasonable default. Do NOT use 'github' as an owner or repo name.
 
@@ -193,10 +198,42 @@ def query_live_jira(jql: str) -> str:
                 "user": cfg.get("user", settings.jira_user),
                 "token": cfg.get("token", settings.jira_token),
                 "auth_method": cfg.get("auth_method", settings.jira_auth_method),
+                "projects": cfg.get("projects", []),
             })
 
-    all_results = []
+    # Extract requested project keys from JQL (e.g. project = PIPE, project in (PIPE, CAS))
+    project_matches = re.findall(r'project\s*(?:=|in)\s*\(?([A-Za-z0-9_,\s]+)\)?', jql, re.IGNORECASE)
+    requested_projects = set()
+    for match in project_matches:
+        for p in re.findall(r'[A-Za-z0-9_]+', match):
+            if p.upper() not in ("AND", "OR", "NOT", "IN", "IS", "NULL", "EMPTY"):
+                requested_projects.add(p.upper())
+
+    # Smart server routing: match servers that host the requested projects
+    matched_configs = []
+    unrestricted_configs = []
     for cfg in configs_to_query:
+        server_projects = cfg.get("projects", [])
+        if isinstance(server_projects, str):
+            server_projects = [p.strip().upper() for p in server_projects.split(",") if p.strip()]
+        else:
+            server_projects = [p.strip().upper() for p in server_projects if isinstance(p, str)]
+
+        if server_projects and requested_projects:
+            if any(p in server_projects for p in requested_projects):
+                matched_configs.append(cfg)
+        elif not server_projects:
+            unrestricted_configs.append(cfg)
+
+    if matched_configs:
+        targets = matched_configs
+    elif requested_projects and unrestricted_configs:
+        targets = unrestricted_configs
+    else:
+        targets = configs_to_query
+
+    all_results = []
+    for cfg in targets:
         server_url = cfg["url"]
         if server_url.startswith("https://"):
             server_url = server_url[8:]
@@ -226,12 +263,23 @@ def query_live_jira(jql: str) -> str:
                 for issue in issues:
                     key = issue.key
                     summary = issue.fields.summary
-                    status = issue.fields.status.name if issue.fields.status else "Unknown"
-                    assignee = issue.fields.assignee.displayName if issue.fields.assignee else "Unassigned"
-                    updated = issue.fields.updated
-                    all_results.append(f"- {key} ({status}): {summary} | Assignee: {assignee} | Updated: {updated}")
+                    status = issue.fields.status.name if getattr(issue.fields, "status", None) else "Unknown"
+                    issue_type = issue.fields.issuetype.name if getattr(issue.fields, "issuetype", None) else "Unknown"
+                    priority = issue.fields.priority.name if getattr(issue.fields, "priority", None) else "None"
+                    assignee = issue.fields.assignee.displayName if getattr(issue.fields, "assignee", None) else "Unassigned"
+                    updated = getattr(issue.fields, "updated", "Unknown Date")
+                    all_results.append(
+                        f"- {key} [{issue_type} | Priority: {priority}] ({status}): {summary} | Assignee: {assignee} | Updated: {updated}")
+            else:
+                all_results.append(f"### Results from {cfg['name']} ({server_url}):\nFound 0 matching tickets.")
         except Exception as e:
-            all_results.append(f"### Results from {cfg['name']} ({server_url}):\nFailed to execute JQL '{jql}': {str(e)}")
+            err_str = str(e)
+            logger.debug("Jira server %s query failed: %s", cfg["name"], err_str)
+            if "does not exist" in err_str.lower() or "not exist" in err_str.lower() or "not found" in err_str.lower():
+                all_results.append(f"### Results from {cfg['name']} ({server_url}):\n(Project or field not present on this Jira instance)")
+            else:
+                first_line = err_str.splitlines()[0] if err_str else "Unknown error"
+                all_results.append(f"### Results from {cfg['name']} ({server_url}):\n(Query note: {first_line})")
 
     if not all_results:
         return "No tickets found matching this JQL across any configured Jira servers."
@@ -307,7 +355,14 @@ def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
                 all_results.append(f"### Results from {cfg['name']} ({clean_url}):\nNo PRs found for {project}/{repo} in state {state}.")
         except Exception as e:
             clean_url = server_url.replace("https://", "").replace("http://", "")
-            all_results.append(f"### Results from {cfg['name']} ({clean_url}):\nFailed to query Bitbucket: {str(e)}")
+            err_str = str(e)
+            logger.debug("Bitbucket server %s query failed: %s", cfg["name"], err_str)
+            if "404" in err_str or "not found" in err_str.lower():
+                all_results.append(
+                    f"### Results from {cfg['name']} ({clean_url}):\n(Repository '{project}/{repo}' not found on this Bitbucket instance)")
+            else:
+                first_line = err_str.splitlines()[0] if err_str else "Unknown error"
+                all_results.append(f"### Results from {cfg['name']} ({clean_url}):\n(Query note: {first_line})")
 
     if not all_results:
         return "No PRs found across any configured Bitbucket servers."
@@ -319,7 +374,22 @@ def query_live_github(owner: str, repo: str, state: str = "open", item_type: str
     import requests
     from ragdoll.config import settings
 
-    cfg = settings.get_github_config(None)
+    # Resolve target server based on repo mapping
+    target_server = None
+    target_repo_str = f"{owner}/{repo}".lower()
+    if settings.github_servers:
+        for name, s_cfg in settings.github_servers.items():
+            server_repos = s_cfg.get("repos", [])
+            if isinstance(server_repos, str):
+                server_repos = [r.strip().lower() for r in server_repos.split(",") if r.strip()]
+            else:
+                server_repos = [r.strip().lower() for r in server_repos if isinstance(r, str)]
+
+            if target_repo_str in server_repos or any(r.endswith(f"/{repo}".lower()) for r in server_repos):
+                target_server = name
+                break
+
+    cfg = settings.get_github_config(target_server)
     url = cfg["url"]
     token = cfg["token"]
 
@@ -378,7 +448,10 @@ def query_live_github(owner: str, repo: str, state: str = "open", item_type: str
 
         return "\n".join(results)
     except Exception as e:
-        return f"### Results from GitHub ({url}):\nFailed to query GitHub for {owner}/{repo}: {str(e)}"
+        err_str = str(e)
+        logger.debug("GitHub query failed for %s/%s: %s", owner, repo, err_str)
+        first_line = err_str.splitlines()[0] if err_str else "Unknown error"
+        return f"### Results from GitHub ({url}):\nFailed to query GitHub for {owner}/{repo}: {first_line}"
 
 
 def chat_with_context(
@@ -453,8 +526,16 @@ def chat_with_context(
         elif "GITHUB_DATABASE" in intent:
             logger.info("Routing query to Live GitHub Database...")
             try:
-                gh_msg = Settings.llm.chat(
-                    [ChatMessage(role=MessageRole.USER, content=GITHUB_PARAM_GENERATOR_PROMPT.format(question=user_query))])
+                known_repos = settings.get_all_github_repos()
+                known_repos_str = ", ".join(known_repos) if known_repos else "None configured"
+                default_owner = settings.github_default_owner or "None"
+
+                prompt_text = GITHUB_PARAM_GENERATOR_PROMPT.format(
+                    question=user_query,
+                    known_repos=known_repos_str,
+                    default_owner=default_owner,
+                )
+                gh_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=prompt_text)])
                 params_str = gh_msg.message.content.strip()
 
                 owner, repo, state, item_type = "UNKNOWN", "UNKNOWN", "all", "all"
@@ -467,6 +548,10 @@ def chat_with_context(
                     state = parts[2]
                 if len(parts) >= 4:
                     item_type = parts[3]
+
+                # Fall back to default_owner if owner was unresolved
+                if (not owner or owner.upper() == "UNKNOWN") and settings.github_default_owner:
+                    owner = settings.github_default_owner
 
                 logger.info("Parsed GitHub params: owner=%s, repo=%s, state=%s, type=%s", owner, repo, state, item_type)
                 live_results = query_live_github(owner, repo, state, item_type)
