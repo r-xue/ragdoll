@@ -127,7 +127,7 @@ for both auto-retrieval filtering and context display.
 
 | Metadata Key | Type | Description |
 |---|---|---|
-| `key` | `str` | Issue key (e.g. `PIPE-1234`) |
+| `key` | `str` | Issue key (e.g. `PROJ-1234`) |
 | `components` | `str` | Comma-separated component names (e.g. `hif_makeimages, hif_findcont`) |
 | `fix_versions` | `str` | Target fix version names |
 | `affects_versions` | `str` | Affected version names |
@@ -155,8 +155,9 @@ Fetches pull requests and their activity threads from an on-premise Bitbucket Se
 - Author information
 - A chronological thread of all comments, approvals, and merges
 
-> [!NOTE]
-> **Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+```{note}
+**Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+```
 
 ### Example
 
@@ -195,6 +196,70 @@ pixi run ragdoll ingest bitbucket --server internal --project PROJ --repo backen
 | `author` | `str` | Author of the PR |
 | `title` | `str` | PR Title |
 | `status` | `str` | MERGED, OPEN, or DECLINED |
+| `created_at_ts` | `float` | Unix timestamp of creation |
+| `updated_at_ts` | `float` | Unix timestamp of last update |
+
+
+## GitHub Issues & Pull Requests
+
+**Module:** `ragdoll.ingest.github`
+
+Fetches issues, pull requests, and discussion threads from public or private GitHub repositories (including GitHub Enterprise Server) via the GitHub REST API. Each issue or PR is converted into a structured document containing:
+
+- Issue / PR Title, number, status (`open` or `closed`), and type label (`Issue` or `PR`)
+- Author login name
+- Creation date and full issue description
+- A chronological thread of all comments and activity
+
+```{note}
+**Scope:** This module ingests Issue and Pull Request discussions, descriptions, and comments. To ingest the repository's actual Python source code files, use `ragdoll ingest code` after cloning the repository.
+```
+
+### Example
+
+```bash
+# Ingest all Issues and PRs (both Open and Closed) with full comment threads
+pixi run ragdoll ingest github myorg myrepo --state all
+
+# Ingest only Open issues & PRs
+pixi run ragdoll ingest github myorg myrepo --state open
+
+# Pass a token directly via CLI to avoid API rate limits
+pixi run ragdoll ingest github myorg myrepo --token "ghp_..."
+```
+
+### Multi-Site / Enterprise Ingestion
+
+You can configure global or enterprise GitHub instances in `~/.ragdoll/config.toml`:
+
+```toml
+# Default / Public GitHub
+github_token = "ghp_YOUR_PERSONAL_ACCESS_TOKEN"
+
+# GitHub Enterprise Server
+[github_servers.enterprise]
+url = "https://github.internal.mycompany.com/api/v3"
+token = "ghp_ENTERPRISE_TOKEN"
+```
+
+Then specify the server during ingestion:
+
+```bash
+pixi run ragdoll ingest github --server enterprise --owner myorg --repo internal-service --state all
+```
+
+### Extracted Metadata
+
+| Metadata Key | Type | Description |
+|---|---|---|
+| `source` | `str` | `"github"` |
+| `owner` | `str` | GitHub organization or username |
+| `repo` | `str` | GitHub repository name |
+| `issue_number` | `str` | Issue or Pull Request number |
+| `is_pr` | `bool` | `True` if Pull Request, `False` if standard Issue |
+| `author` | `str` | Author's GitHub username |
+| `title` | `str` | Issue / PR title |
+| `status` | `str` | Workflow status (`open` or `closed`) |
 | `created_at_ts` | `float` | Unix timestamp of creation |
 | `updated_at_ts` | `float` | Unix timestamp of last update |
 
@@ -264,8 +329,9 @@ Using standard git CLI commands, it extracts each commit into a `Document` conta
 - Author Name and Date
 - Commit Subject and Body
 
-> [!TIP]
-> Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
+```{tip}
+Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
+```
 
 ### Extracted Metadata
 
@@ -298,7 +364,8 @@ pixi run ragdoll search "tclean" --source jira
 pixi run ragdoll summarize "calibration" --source pdf
 pixi run ragdoll chat --source code
 pixi run ragdoll search "bugfix" --source git
+pixi run ragdoll search "feature request" --source github
 ```
 
 This filters on the `source` metadata field in ChromaDB, which is set to
-`"pdf"`, `"jira"`, `"bitbucket"`, `"code"`, or `"git"` during ingestion.
+`"pdf"`, `"jira"`, `"bitbucket"`, `"github"`, `"code"`, or `"git"` during ingestion.

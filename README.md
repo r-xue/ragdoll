@@ -10,7 +10,7 @@ source code, indexes them for semantic search, and connects to a local LLM via
 
 ## Key Features
 
-- **Multi-source ingestion** — PDF, JIRA, Bitbucket, and Python code (AST-parsed)
+- **Multi-source ingestion** — PDF, JIRA, Bitbucket, GitHub, Git, and Python code (AST-parsed)
 - **Semantic search** — ChromaDB vector store with cosine similarity
 - **Local LLM** — Ollama-powered embedding and generation
 - **Interactive chat** — Multi-turn RAG chat with persistent history
@@ -47,6 +47,8 @@ bitbucket_url = "https://your-bitbucket.example.com"
 bitbucket_user = "your.user"
 bitbucket_token = "YOUR_HTTP_ACCESS_TOKEN"
 bitbucket_auth_method = "pat"
+
+github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 EOF
 chmod 600 ~/.ragdoll/config.toml
 
@@ -75,6 +77,9 @@ pixi run ragdoll ingest jira \
 
 # Ingest Bitbucket Pull Requests and comments
 pixi run ragdoll ingest bitbucket --project PROJ --repo backend --state ALL
+
+# Ingest GitHub Issues and PR discussions
+pixi run ragdoll ingest github myorg myrepo --state all
 
 # Ingest Python source code (AST-parsed per function/class)
 pixi run ragdoll ingest code ./src/
@@ -181,6 +186,8 @@ CLI / Chat  →  Embed query  →  Retriever  ←──────────�
 | **PDF** | `ragdoll.ingest.pdf` | PyMuPDF text extraction → recursive character splitter |
 | **JIRA** | `ragdoll.ingest.jira` | REST API with JQL → structured text per issue |
 | **Bitbucket** | `ragdoll.ingest.bitbucket` | REST API → structured text per PR and comment thread |
+| **GitHub** | `ragdoll.ingest.github` | REST API → structured text per Issue/PR and comment thread |
+| **Git** | `ragdoll.ingest.git` | Commit history extraction across all branches |
 | **Code** | `ragdoll.ingest.code` | AST parsing → one Document per function/class/module docstring |
 
 ### Key Components

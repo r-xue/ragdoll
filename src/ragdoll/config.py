@@ -109,6 +109,7 @@ class Settings(BaseSettings):
                 "token": cfg.get("token", self.jira_token),
                 "batch_size": cfg.get("batch_size", self.jira_batch_size),
                 "auth_method": cfg.get("auth_method", self.jira_auth_method),
+                "projects": cfg.get("projects", []),
             }
         return {
             "url": self.jira_url,
@@ -116,6 +117,7 @@ class Settings(BaseSettings):
             "token": self.jira_token,
             "batch_size": self.jira_batch_size,
             "auth_method": self.jira_auth_method,
+            "projects": [],
         }
 
     # ── BITBUCKET ──────────────────────────────────────────────────────
@@ -141,6 +143,42 @@ class Settings(BaseSettings):
             "token": self.bitbucket_token,
             "auth_method": self.bitbucket_auth_method,
         }
+
+    # ── GITHUB ─────────────────────────────────────────────────────────
+    github_servers: dict[str, dict] = Field(default_factory=dict)
+    github_url: str = "https://api.github.com"
+    github_token: str = ""
+
+    github_default_owner: str = ""
+    github_repos: list[str] = Field(default_factory=list)
+
+    def get_github_config(self, server_name: str | None = None) -> dict:
+        """Get the active GitHub configuration."""
+        if server_name and server_name in self.github_servers:
+            cfg = self.github_servers[server_name]
+            return {
+                "url": cfg.get("url", self.github_url),
+                "token": cfg.get("token", self.github_token),
+                "default_owner": cfg.get("default_owner", self.github_default_owner),
+                "repos": cfg.get("repos", []),
+            }
+        return {
+            "url": self.github_url,
+            "token": self.github_token,
+            "default_owner": self.github_default_owner,
+            "repos": self.github_repos,
+        }
+
+    def get_all_github_repos(self) -> list[str]:
+        """Get list of all tracked GitHub repositories across all servers."""
+        all_repos = list(self.github_repos)
+        for name, cfg in self.github_servers.items():
+            repos = cfg.get("repos", [])
+            if isinstance(repos, list):
+                all_repos.extend(repos)
+            elif isinstance(repos, str):
+                all_repos.extend([r.strip() for r in repos.split(",") if r.strip()])
+        return list(dict.fromkeys(all_repos))
 
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
@@ -173,6 +211,7 @@ class Settings(BaseSettings):
 # Module-level singleton — importable as ``from ragdoll.config import settings``
 settings = Settings()
 
+
 def setup_llamaindex():
     from llama_index.core import Settings as LlamaSettings
     from llama_index.llms.ollama import Ollama
@@ -184,6 +223,7 @@ def setup_llamaindex():
         Provides batching support to avoid making one HTTP request per node,
         and enables truncate=True to prevent 'input length exceeds context length' errors.
         """
+
         def get_general_text_embedding(self, texts: str) -> list[float]:
             safe_texts = texts[:32000] if isinstance(texts, str) else texts
             result = self._client.embed(
@@ -207,11 +247,11 @@ def setup_llamaindex():
         def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
             if not texts:
                 return []
-            
+
             # Manually truncate to 3500 chars (approx 800-1000 tokens) to safely avoid
             # Ollama's context length bug which sometimes ignores truncate=True
             safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
-            
+
             result = self._client.embed(
                 model=self.model_name,
                 input=safe_texts,
@@ -223,9 +263,9 @@ def setup_llamaindex():
         async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
             if not texts:
                 return []
-                
+
             safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
-            
+
             result = await self._async_client.embed(
                 model=self.model_name,
                 input=safe_texts,
@@ -248,6 +288,6 @@ def setup_llamaindex():
     LlamaSettings.chunk_size = settings.chunk_size
     LlamaSettings.chunk_overlap = settings.chunk_overlap
 
+
 # Initialize on import
 setup_llamaindex()
-
