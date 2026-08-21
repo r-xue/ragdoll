@@ -14,8 +14,9 @@ pixi run ragdoll search "bandpass flagging" -n 5
 
 Results are displayed in a table with source ID, similarity score, and text preview.
 
-> [!NOTE]
-> The `-n` flag controls the **`top_k`** retrieval parameter. This dictates how many chunks of text the vector database returns to you. Higher values give the LLM more context but can crowd the prompt context window, while lower values are faster but might miss necessary details. The default is configured to `20`.
+```{note}
+The `-n` flag controls the **`top_k`** retrieval parameter. This dictates how many chunks of text the vector database returns to you. Higher values give the LLM more context but can crowd the prompt context window, while lower values are faster but might miss necessary details. The default is configured to `20`.
+```
 
 ## Summarizing
 

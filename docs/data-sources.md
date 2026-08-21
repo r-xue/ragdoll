@@ -155,8 +155,9 @@ Fetches pull requests and their activity threads from an on-premise Bitbucket Se
 - Author information
 - A chronological thread of all comments, approvals, and merges
 
-> [!NOTE]
-> **Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+```{note}
+**Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+```
 
 ### Example
 
@@ -210,8 +211,9 @@ Fetches issues, pull requests, and discussion threads from public or private Git
 - Creation date and full issue description
 - A chronological thread of all comments and activity
 
-> [!NOTE]
-> **Scope:** This module ingests Issue and Pull Request discussions, descriptions, and comments. To ingest the repository's actual Python source code files, use `ragdoll ingest code` after cloning the repository.
+```{note}
+**Scope:** This module ingests Issue and Pull Request discussions, descriptions, and comments. To ingest the repository's actual Python source code files, use `ragdoll ingest code` after cloning the repository.
+```
 
 ### Example
 
@@ -327,8 +329,9 @@ Using standard git CLI commands, it extracts each commit into a `Document` conta
 - Author Name and Date
 - Commit Subject and Body
 
-> [!TIP]
-> Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
+```{tip}
+Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
+```
 
 ### Extracted Metadata
 
