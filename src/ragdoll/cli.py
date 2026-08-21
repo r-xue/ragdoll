@@ -180,6 +180,43 @@ def ingest_bitbucket_cmd(
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
+@ingest.command("github")
+@click.argument("owner")
+@click.argument("repo")
+@click.option("--state", default="all", help="Issue state (all, open, closed).")
+@click.option("--server", default=None, help="Server config to use from settings.")
+@click.option("--url", default=None, help="Override GitHub API URL.")
+@click.option("--token", default=None, help="Override GitHub Personal Access Token.")
+def ingest_github_cmd(
+    owner: str,
+    repo: str,
+    state: str,
+    server: str | None,
+    url: str | None,
+    token: str | None,
+) -> None:
+    """Ingest GitHub Issues and PRs (with comments)."""
+    from ragdoll.ingest.github import ingest_github as _ingest_github
+    from ragdoll.store.vectordb import count
+
+    with console.status(f"[bold cyan]Fetching and embedding GitHub Issues/PRs from {owner}/{repo}…"):
+        n = _ingest_github(
+            owner=owner,
+            repo=repo,
+            state=state,
+            server=server,
+            override_url=url,
+            override_token=token,
+        )
+
+    if n == 0:
+        console.print("[yellow]No Issues or PRs found or ingested.[/yellow]")
+        return
+
+    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
+    console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+
+
 @ingest.command("code")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
@@ -222,14 +259,14 @@ def ingest_git_cmd(repo_path: str, max_commits: int) -> None:
     """Ingest git commit history from a local repository."""
     from ragdoll.ingest.git import ingest_git as _ingest_git
     from ragdoll.store.vectordb import count
-    
+
     with console.status(f"[bold cyan]Fetching git commits from {repo_path}…"):
         n = _ingest_git(repo_path=repo_path, max_commits=max_commits)
-        
+
     if n == 0:
         console.print("[yellow]No commits found or ingested.[/yellow]")
         return
-        
+
     console.print(f"  💾 Stored [green]{n}[/green] commit(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
@@ -239,7 +276,7 @@ def ingest_git_cmd(repo_path: str, max_commits: int) -> None:
 @cli.command()
 @click.argument("query")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of results.")
-@click.option("--source", type=click.Choice(["pdf", "jira", "code"]), default=None, help="Filter by source.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter by source.")
 def search(query: str, top_k: int | None, source: str | None) -> None:
     """Semantic search over ingested documents."""
     from ragdoll.query.retriever import search as _search
@@ -271,7 +308,7 @@ def search(query: str, top_k: int | None, source: str | None) -> None:
 @cli.command()
 @click.argument("topic")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of context chunks.")
-@click.option("--source", type=click.Choice(["pdf", "jira", "code"]), default=None, help="Filter by source.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter by source.")
 def summarize(topic: str, top_k: int | None, source: str | None) -> None:
     """Summarize information about a topic from ingested data."""
     from ragdoll.query.rag import summarize as _summarize
@@ -292,7 +329,7 @@ def summarize(topic: str, top_k: int | None, source: str | None) -> None:
 # ── Chat command ───────────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--source", type=click.Choice(["pdf", "jira", "code"]), default=None, help="Filter context by source.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter context by source.")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of context chunks per turn.")
 def chat(source: str | None, top_k: int | None) -> None:
     """Interactive RAG chat session.

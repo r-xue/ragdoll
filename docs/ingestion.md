@@ -1,6 +1,6 @@
 # Ingesting Data
 
-Ragdoll supports five data sources. Each ingestion pipeline extracts text,
+Ragdoll supports multiple data sources (PDF, JIRA, Bitbucket, GitHub, Git, and Python code). Each ingestion pipeline extracts text,
 chunks it, computes embeddings via Ollama, and stores them in ChromaDB.
 
 ## PDF Documents
@@ -73,6 +73,22 @@ search and chat across all sites together.
 | `--user` | JIRA username (overrides config) |
 | `--token` | API token / PAT (overrides config) |
 | `--auth-method` | `pat` or `basic` (overrides config) |
+
+## GitHub Issues & Pull Requests
+
+```bash
+# Ingest all open and closed issues & PRs (with all comments)
+pixi run ragdoll ingest github myorg myrepo --state all
+
+# Ingest only open issues/PRs
+pixi run ragdoll ingest github myorg myrepo --state open
+
+# Pass an API token to prevent rate limiting
+pixi run ragdoll ingest github myorg myrepo --token YOUR_GITHUB_PAT
+```
+
+GitHub ingestion extracts the full discussion context: issue title, description,
+author, state (open/closed), creation date, and chronological comment threads.
 
 ## Python Source Code
 

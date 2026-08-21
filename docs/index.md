@@ -57,12 +57,12 @@ to external services.
 
 * **Just want to try it out?** Head to the [Getting Started](getting-started.md) guide.
 * **Want to connect Ragdoll to Claude/VS Code?** Check out the [MCP Integration](mcp-integration.md).
-* **Need to ingest your company's Jira or Bitbucket?** Read about [Ingesting Data](ingestion.md) and [Configuration](configuration.md).
+* **Need to ingest Jira, Bitbucket, GitHub, or Git?** Read about [Ingesting Data](ingestion.md) and [Configuration](configuration.md).
 * **Want to build on top of Ragdoll?** Dive into the [System Architecture](architecture.md), [API Reference](api/index.md), or learn about [Extending Ragdoll](extending.md).
 
 ### Key Features
 
-- **Multi-source ingestion** — PDF, JIRA, Bitbucket, Git, and Python code
+- **Multi-source ingestion** — PDF, JIRA, Bitbucket, GitHub, Git, and Python code
 - **Semantic search** — ChromaDB vector store with cosine similarity
 - **Local LLM** — Ollama-powered embedding and generation
 - **Interactive chat** — Multi-turn RAG chat with persistent history

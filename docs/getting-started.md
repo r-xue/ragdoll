@@ -82,6 +82,15 @@ url = "https://bitbucket.example.com"
 user = "your.username"
 token = "YOUR_HTTP_ACCESS_TOKEN"
 auth_method = "pat"
+
+# ==========================================
+# 4. GitHub Configurations
+# ==========================================
+github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+
+[github_servers.enterprise]
+url = "https://github.internal.mycompany.com/api/v3"
+token = "YOUR_ENTERPRISE_TOKEN"
 EOF
 chmod 600 ~/.ragdoll/config.toml
 ```
@@ -98,6 +107,9 @@ pixi run ragdoll ingest pdf ./path/to/docs/
 
 # Ingest recent JIRA tickets
 pixi run ragdoll ingest jira --jql "project = MYPROJ AND updated >= -30d"
+
+# Ingest GitHub issues and PR discussions
+pixi run ragdoll ingest github myorg myrepo --state all
 
 # Ingest a Python codebase
 pixi run ragdoll ingest code ./src/

@@ -142,6 +142,24 @@ class Settings(BaseSettings):
             "auth_method": self.bitbucket_auth_method,
         }
 
+    # ── GITHUB ─────────────────────────────────────────────────────────
+    github_servers: dict[str, dict] = Field(default_factory=dict)
+    github_url: str = "https://api.github.com"
+    github_token: str = ""
+
+    def get_github_config(self, server_name: str | None = None) -> dict:
+        """Get the active GitHub configuration."""
+        if server_name and server_name in self.github_servers:
+            cfg = self.github_servers[server_name]
+            return {
+                "url": cfg.get("url", self.github_url),
+                "token": cfg.get("token", self.github_token),
+            }
+        return {
+            "url": self.github_url,
+            "token": self.github_token,
+        }
+
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
     embed_model: str = "nomic-embed-text"
@@ -173,6 +191,7 @@ class Settings(BaseSettings):
 # Module-level singleton — importable as ``from ragdoll.config import settings``
 settings = Settings()
 
+
 def setup_llamaindex():
     from llama_index.core import Settings as LlamaSettings
     from llama_index.llms.ollama import Ollama
@@ -184,6 +203,7 @@ def setup_llamaindex():
         Provides batching support to avoid making one HTTP request per node,
         and enables truncate=True to prevent 'input length exceeds context length' errors.
         """
+
         def get_general_text_embedding(self, texts: str) -> list[float]:
             safe_texts = texts[:32000] if isinstance(texts, str) else texts
             result = self._client.embed(
@@ -207,11 +227,11 @@ def setup_llamaindex():
         def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
             if not texts:
                 return []
-            
+
             # Manually truncate to 3500 chars (approx 800-1000 tokens) to safely avoid
             # Ollama's context length bug which sometimes ignores truncate=True
             safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
-            
+
             result = self._client.embed(
                 model=self.model_name,
                 input=safe_texts,
@@ -223,9 +243,9 @@ def setup_llamaindex():
         async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
             if not texts:
                 return []
-                
+
             safe_texts = [t[:3500] if isinstance(t, str) else t for t in texts]
-            
+
             result = await self._async_client.embed(
                 model=self.model_name,
                 input=safe_texts,
@@ -248,6 +268,6 @@ def setup_llamaindex():
     LlamaSettings.chunk_size = settings.chunk_size
     LlamaSettings.chunk_overlap = settings.chunk_overlap
 
+
 # Initialize on import
 setup_llamaindex()
-

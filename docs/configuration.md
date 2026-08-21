@@ -26,6 +26,10 @@ jira_user = "your.username"
 jira_token = "YOUR_PERSONAL_ACCESS_TOKEN"
 jira_auth_method = "pat"   # "pat" for JIRA Data Center, "basic" for Cloud
 
+# GitHub connection
+github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+github_url = "https://api.github.com" 
+
 # Model preferences
 chat_model = "gpt-oss:20b"
 embed_model = "nomic-embed-text"
@@ -78,6 +82,13 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 | `jira_token` | `str` | `""` | API token or Personal Access Token |
 | `jira_auth_method` | `str` | `"pat"` | `"pat"` (Data Center) or `"basic"` (Cloud) |
 | `jira_batch_size` | `int` | `50` | Issues fetched per API call |
+
+### GitHub
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `github_url` | `str` | `"https://api.github.com"` | GitHub REST API endpoint |
+| `github_token` | `str` | `""` | GitHub Personal Access Token (PAT) |
 
 ### Ollama / LLM
 
