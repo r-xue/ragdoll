@@ -56,6 +56,7 @@ to external services.
 ### 🧭 Where should I go?
 
 * **Just want to try it out?** Head to the [Getting Started](getting-started.md) guide.
+* **Ready to search, summarize, or chat?** See [Searching and Chatting](usage.md) and the [Web UI](web-ui.md).
 * **Want to connect Ragdoll to Claude/VS Code?** Check out the [MCP Integration](mcp-integration.md).
 * **Need to ingest Jira, Bitbucket, GitHub, or Git?** Read about [Ingesting Data](ingestion.md) and [Configuration](configuration.md).
 * **Want to build on top of Ragdoll?** Dive into the [System Architecture](architecture.md), [API Reference](api/index.md), or learn about [Extending Ragdoll](extending.md).
