@@ -50,11 +50,21 @@ def count(name: str | None = None) -> int:
     return client.get_or_create_collection(name).count()
 
 
-def delete_collection(name: str | None = None) -> None:
+def delete_collection(name: str | None = None, purge_storage: bool = True) -> None:
+    """Delete a ChromaDB collection and optionally purge storage to reclaim disk space."""
+    import shutil
     client = _get_client()
     name = name or settings.collection_name
-    client.delete_collection(name)
-    logger.info("Deleted collection: %s", name)
+    try:
+        client.delete_collection(name)
+    except Exception as e:
+        logger.debug("Collection deletion notice: %s", e)
+
+    if purge_storage and settings.chroma_dir.exists():
+        shutil.rmtree(settings.chroma_dir, ignore_errors=True)
+        settings.ensure_dirs()
+
+    logger.info("Deleted collection: %s (purged storage: %s)", name, purge_storage)
 
 
 def list_collections() -> list[str]:
