@@ -71,6 +71,44 @@ RAGDOLL_CHAT_MODEL=gpt-oss:20b pixi run ragdoll chat
 RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 ```
 
+## Switching Models (Chat vs. Embedding)
+
+Ragdoll decouples your **Generative / Chat Model** from your **Embedding Model**:
+
+### 1. Changing Chat Models (`chat_model`)
+
+* **Impact**: **Instant, zero re-indexing required.**
+* **Behavior**: The chat model is used purely at query time for intent routing, JQL generation, and answer synthesis. You can change `chat_model` at any time:
+
+  ```toml
+  chat_model = "qwen3.6:27b"
+  ```
+
+  or via environment variable:
+
+  ```bash
+  RAGDOLL_CHAT_MODEL=qwen3.6:27b pixi run ragdoll chat
+  ```
+
+### 2. Changing Embedding Models (`embed_model`)
+
+* **Impact**: **Requires clearing the vector database and re-ingesting.**
+* **Behavior**: Embedding models (e.g. `nomic-embed-text` at 768 dimensions vs `bge-m3` at 1024 dimensions) create vectors in different mathematical spaces. ChromaDB collections cannot mix incompatible vector dimensions.
+* **Workflow to switch embedding models**:
+
+  ```bash
+  # 1. Update embed_model in ~/.ragdoll/config.toml
+  # embed_model = "bge-m3"
+  # or
+  # embed_model = "qwen3-embedding:0.6b"
+
+  # 2. Clear the old vector database
+  pixi run ragdoll clear --force
+
+  # 3. Re-run your ingestion scripts
+  pixi run ragdoll ingest ...
+  ```
+
 ## Settings Reference
 
 ### JIRA

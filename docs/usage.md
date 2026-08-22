@@ -143,6 +143,25 @@ pixi run ragdoll -v chat
 pixi run ragdoll -v search "memory leak in buffer"
 ```
 
+## Clearing the Vector Database (`clear`)
+
+To remove all indexed documents and reset your vector database:
+
+```bash
+# Interactive confirmation prompt
+pixi run ragdoll clear
+
+# Force deletion without confirmation prompt
+pixi run ragdoll clear --force
+```
+
+```{important}
+**When should you clear the vector store?**
+* **Switching Embedding Models**: If you change `embed_model` in `config.toml` (e.g. from `nomic-embed-text` to `bge-m3`), vector dimensions change. You **must** run `pixi run ragdoll clear --force` before re-ingesting.
+* **Corrupted or Stale Indices**: If you want a fresh start or to completely purge previously ingested projects.
+* *(Note: Switching `chat_model` does NOT require clearing the database).*
+```
+
 ## Status
 
 ```bash

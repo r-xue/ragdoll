@@ -121,17 +121,16 @@ def ingest_jira(
     from ragdoll.ingest.jira import ingest_jira as _ingest_jira
     from ragdoll.store.vectordb import count
 
-    with console.status("[bold cyan]Fetching and embedding JIRA issues using LlamaIndex…"):
-        n = _ingest_jira(
-            jql=jql,
-            server=server,
-            max_results=max_results,
-            force=force,
-            override_url=url,
-            override_user=user,
-            override_token=token,
-            override_auth_method=auth_method
-        )
+    n = _ingest_jira(
+        jql=jql,
+        server=server,
+        max_results=max_results,
+        force=force,
+        override_url=url,
+        override_user=user,
+        override_token=token,
+        override_auth_method=auth_method
+    )
 
     if n == 0:
         console.print("[yellow]No issues found or ingested for the given JQL.[/yellow]")
@@ -465,6 +464,30 @@ def mcp(transport: str, port: int) -> None:
 
 
 # ── Status command ─────────────────────────────────────────────────────
+
+@cli.command("clear")
+@click.option("-f", "--force", is_flag=True, help="Skip confirmation prompt.")
+def clear_cmd(force: bool) -> None:
+    """Clear the ChromaDB vector database collection."""
+    from ragdoll.store.vectordb import count, delete_collection
+
+    current_count = count()
+    if current_count == 0:
+        console.print("[yellow]Vector store collection is already empty.[/yellow]")
+        return
+
+    if not force:
+        confirm = click.confirm(
+            f"Are you sure you want to delete all {current_count} chunk(s) from collection '{settings.collection_name}'?",
+            default=False,
+        )
+        if not confirm:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    delete_collection()
+    console.print(f"[bold green]✓ Cleared {current_count} chunk(s) from collection '{settings.collection_name}'.[/bold green]")
+
 
 @cli.command()
 def status() -> None:
