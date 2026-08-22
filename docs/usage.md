@@ -6,7 +6,7 @@ pixi run ragdoll search "tclean performance regression"
 
 # Filter by source
 pixi run ragdoll search "embedding function" --source code
-pixi run ragdoll search "calibration pipeline" --source pdf
+pixi run ragdoll search "memory allocation" --source pdf
 
 # Control result count (`top_k`)
 pixi run ragdoll search "bandpass flagging" -n 5
@@ -95,9 +95,9 @@ When you ask for current lists, unresolved tickets, PR reviews, or exact item co
   > *(Ragdoll queries your Bitbucket Data Center REST API for active PRs and approval statuses).*
 
 ### 2. Knowledge Retrieval Queries (ChromaDB Vector Search)
-When you ask conceptual, architectural, or debugging questions, Ragdoll uses `VectorIndexAutoRetriever` to perform semantic vector search over your offline ChromaDB database:
+When you ask conceptual, architectural, or debugging questions, Ragdoll performs semantic vector search over your offline ChromaDB database:
 
-* *"How does the calibration pipeline handle flagged antennas?"*
+* *"How does the worker service handle failed tasks?"*
 * *"Explain the function of the AST code chunker in `ragdoll.ingest.code`."*
 * *"What was the resolution for the memory leak discussed in past Jira tickets?"*
 

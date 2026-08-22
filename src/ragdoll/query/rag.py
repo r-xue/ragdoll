@@ -54,9 +54,12 @@ Summary:"""
 
 
 CONDENSE_PROMPT_TEMPLATE = """\
-Given the following conversation history and a follow-up user question, rephrase the follow-up question into a complete, standalone question that incorporates all necessary context (such as specific project keys, repositories, or topics mentioned earlier).
-If the follow-up question is already complete and standalone, return it unchanged.
-Return ONLY the rephrased standalone question, nothing else. No preamble, no quotes.
+Given the following conversation history and a follow-up question, determine if the follow-up question refers to a previous entity, project, or topic.
+- If the question contains pronouns or implicit references (e.g. "how many of them are open?", "who created it?", "show me the comments"), rephrase it into a complete standalone question.
+- If the question introduces a new topic, function, class, tool, or document (e.g. "what does calculate_checksum do?", "explain authentication"), DO NOT append previous project names or organizations. Return the question VERBATIM.
+- If the question is already complete and self-contained, return it VERBATIM.
+
+Return ONLY the standalone question, nothing else. No explanation, no quotes.
 
 Chat History:
 {chat_history}
