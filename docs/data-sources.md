@@ -43,13 +43,19 @@ Each issue is converted into a structured text document containing:
 | Data Center | PAT (Bearer token) | `jira_auth_method = "pat"` |
 | Cloud | Basic auth (user + API token) | `jira_auth_method = "basic"` |
 
-### Pagination
+### Pagination & Incremental Ingestion
 
-Issues are fetched in batches (default: 50 per request) with automatic
+Issues are fetched in batches (default: 100 per request) with automatic
 pagination. Use `--max-results` to cap the total:
 
 ```bash
 pixi run ragdoll ingest jira --jql "project = MAIN" --max-results 200
+```
+
+Ragdoll automatically compares incoming issue `updated` timestamps against existing ChromaDB metadata. If an issue has not changed since its last ingestion, Ragdoll skips embedding it, saving CPU/GPU resources. Use `-f` / `--force` to bypass this check:
+
+```bash
+pixi run ragdoll ingest jira --server primary --jql "project = MAIN" --force
 ```
 
 ### Multi-Site Ingestion

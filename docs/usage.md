@@ -87,6 +87,81 @@ When you ask conceptual, architectural, or debugging questions, Ragdoll uses `Ve
 * *"Explain the function of the AST code chunker in `ragdoll.ingest.code`."*
 * *"What was the resolution for the memory leak discussed in past Jira tickets?"*
 
+## Global Options & CLI Syntax
+
+Ragdoll commands follow a standard hierarchical structure:
+
+```text
+ragdoll [GLOBAL OPTIONS] <command | group> [SUBCOMMAND] [SUBCOMMAND OPTIONS]
+```
+
+### 1. Flag Placement Rules
+
+* **Global Flags** (`-v`, `--verbose`, `--help`, `--version`): Place **directly after `ragdoll`**:
+  ```bash
+  # Correct global flag placement
+  pixi run ragdoll -v ingest jira --server primary --jql "project = MYPROJ"
+  pixi run ragdoll --verbose chat
+  ```
+
+* **Subcommand Options** (`--server`, `--jql`, `--max-results`, `--source`): Place **after the specific subcommand**:
+  ```bash
+  # Correct subcommand option placement
+  pixi run ragdoll ingest jira --server primary --jql "project = MYPROJ" --max-results 100
+  ```
+
+```{note}
+Because Click parses options strictly by command group, passing a global flag like `--verbose` after `ingest` (e.g. `ragdoll ingest --verbose ...`) will result in an unrecognized option error. Always place global flags directly after `ragdoll`.
+```
+
+### 2. Help Menus (`--help`)
+
+View available commands, flags, and subcommand options:
+
+```bash
+# Top-level CLI help
+pixi run ragdoll --help
+
+# Subcommand-specific help & options
+pixi run ragdoll ingest --help
+pixi run ragdoll ingest jira --help
+pixi run ragdoll search --help
+```
+
+### 3. Verbose / Debug Logging (`-v` / `--verbose`)
+
+Enable detailed debug logs (including live batch progress and LLM routing traces):
+
+```bash
+# Debug live Jira ingestion with detailed pagination progress
+pixi run ragdoll -v ingest jira --server primary --jql "project = MYPROJ"
+
+# Debug live chat queries & LLM routing decisions
+pixi run ragdoll -v chat
+
+# Debug semantic search retrieval scores
+pixi run ragdoll -v search "memory leak in buffer"
+```
+
+## Clearing the Vector Database (`clear`)
+
+To remove all indexed documents and reset your vector database:
+
+```bash
+# Interactive confirmation prompt
+pixi run ragdoll clear
+
+# Force deletion without confirmation prompt
+pixi run ragdoll clear --force
+```
+
+```{important}
+**When should you clear the vector store?**
+* **Switching Embedding Models**: If you change `embed_model` in `config.toml` (e.g. from `nomic-embed-text` to `bge-m3`), vector dimensions change. You **must** run `pixi run ragdoll clear --force` before re-ingesting.
+* **Corrupted or Stale Indices**: If you want a fresh start or to completely purge previously ingested projects.
+* *(Note: Switching `chat_model` does NOT require clearing the database).*
+```
+
 ## Status
 
 ```bash

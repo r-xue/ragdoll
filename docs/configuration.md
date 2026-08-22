@@ -35,8 +35,9 @@ chat_model = "gpt-oss:20b"
 embed_model = "nomic-embed-text"
 temperature = 0.3
 
-# Storage
-data_dir = "/home/you/.ragdoll/data"
+# Storage (optional - defaults to ~/.ragdoll/data)
+# Uncomment to use a custom location with more space or faster disk:
+# data_dir = "/mnt/nvme/ragdoll_data"
 ```
 
 ```{warning}
@@ -71,6 +72,70 @@ RAGDOLL_CHAT_MODEL=gpt-oss:20b pixi run ragdoll chat
 RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 ```
 
+## Switching Models (Chat vs. Embedding)
+
+Ragdoll decouples your **Generative / Chat Model** from your **Embedding Model**:
+
+### 1. Changing Chat Models (`chat_model`)
+
+* **Impact**: **Instant, zero re-indexing required.**
+* **Behavior**: The chat model is used purely at query time for intent routing, JQL generation, and answer synthesis. You can change `chat_model` at any time:
+
+  ```toml
+  chat_model = "qwen3.6:27b"
+  ```
+
+  or via environment variable:
+
+  ```bash
+  RAGDOLL_CHAT_MODEL=qwen3.6:27b pixi run ragdoll chat
+  ```
+
+### 2. Changing Embedding Models (`embed_model`)
+
+* **Impact**: **Requires clearing the vector database and re-ingesting.**
+* **Behavior**: Embedding models (e.g. `nomic-embed-text` at 768 dimensions vs `bge-m3` at 1024 dimensions) create vectors in different mathematical spaces. ChromaDB collections cannot mix incompatible vector dimensions.
+* **Workflow to switch embedding models**:
+
+  ```bash
+  # 1. Update embed_model in ~/.ragdoll/config.toml
+  # embed_model = "bge-m3"
+  # or
+  # embed_model = "qwen3-embedding:0.6b"
+
+  # 2. Clear the old vector database
+  pixi run ragdoll clear --force
+
+  # 3. Re-run your ingestion scripts
+  pixi run ragdoll ingest ...
+  ```
+
+## Hardware & Model Selection Guide
+
+Ragdoll supports Ollama-compatible embedding and chat models. The tables below summarize tested configurations across representative developer desktop and laptop environments.
+
+### 1. Embedding Models
+
+| Model | Size | Dimensions | Context | Notes |
+|---|---|---|---|---|
+| **`bge-m3`** | 1.2 GB | 1024 | 8k | Default recommendation for technical docs, code, and Jira tickets. |
+| **`qwen3-embedding:4b`** | ~2.5 GB | 2048 | 32k | High-capacity embeddings for large codebases and long documents. |
+| **`qwen3-embedding:0.6b`** | ~0.6 GB | 1024 | 8k | Compact 1024-dim model for memory-constrained setups. |
+| **`nomic-embed-text`** | 274 MB | 768 | 2k | Lightweight baseline model. |
+
+### 2. Recommended Chat Models by Hardware Profile
+
+| Hardware Profile (Representative Environments) | Usable Memory | Fast / Low Latency | Reasoning & Code |
+|---|---|---|---|
+| **Dedicated GPU Desktop / Workstation** *(e.g. RTX 3090 / 4090, 24 GB)* | 24 GB dedicated | `gemma4:12b` (~85 tok/s) | `qwen3.8` (27B, ~32 tok/s) |
+| **Mainstream Apple Silicon Mac** *(e.g. M2 / M3 Pro, 32 GB)* | ~24 GB Metal | `gemma4:12b` (~40 tok/s) | `qwen3.8` (27B, ~16 tok/s) |
+| **High-Memory Apple Silicon Mac** *(e.g. M4 Pro / Max, 48 GB)* | ~36 GB Metal | `gemma4:26b` (MoE, ~55 tok/s) | `gemma4:31b` or `qwen3.8` |
+
+```{note}
+**Note on `gpt-oss:20b` (Default Configuration)**
+`gpt-oss:20b` (~13 GB) serves as a balanced general-purpose model with reliable query routing and solid synthesis at ~40–50 tok/s. While it is not highlighted in the table above, it remains a capable out-of-the-box baseline. Developers seeking higher interactive streaming speeds and larger context windows typically prefer `gemma4:12b`, while those requiring deeper technical reasoning and code analysis lean toward `qwen3.8`.
+```
+
 ## Settings Reference
 
 ### JIRA
@@ -81,7 +146,7 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 | `jira_user` | `str` | `""` | JIRA username |
 | `jira_token` | `str` | `""` | API token or Personal Access Token |
 | `jira_auth_method` | `str` | `"pat"` | `"pat"` (Data Center) or `"basic"` (Cloud) |
-| `jira_batch_size` | `int` | `50` | Issues fetched per API call |
+| `jira_batch_size` | `int` | `100` | Issues fetched per API call |
 
 ### GitHub
 
@@ -104,8 +169,18 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for ChromaDB |
+| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for all persistent data (ChromaDB vector store, metadata cache). ChromaDB is stored at `{data_dir}/chroma/` |
 | `collection_name` | `str` | `"ragdoll"` | ChromaDB collection name |
+
+```{tip}
+**When to customize `data_dir`:**
+- **Large datasets**: Move to a disk with more space (e.g., `/mnt/storage/ragdoll_data`)
+- **Performance**: Use faster SSD storage (e.g., `/mnt/nvme/ragdoll`)
+- **Multi-project isolation**: Separate vector databases per project
+- **Network/shared storage**: Use NFS or shared drives for team collaboration
+
+**Important:** Changing `data_dir` creates a fresh database. You'll need to re-ingest all data. To migrate existing data, manually copy the old directory to the new location before updating the config.
+```
 
 ### Chunking & Retrieval
 

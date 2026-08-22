@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     jira_url: str = "https://jira.example.com"
     jira_user: str = ""
     jira_token: str = ""
-    jira_batch_size: int = 50  # issues per API request
+    jira_batch_size: int = 100  # issues per API request
     jira_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
 
     def get_jira_config(self, server_name: str | None = None) -> dict:

@@ -3,7 +3,8 @@
 from ragdoll.config import Settings
 
 
-def test_default_config():
+def test_default_config(monkeypatch, tmp_path):
+    monkeypatch.setattr("ragdoll.config._USER_CONFIG", tmp_path / "nonexistent.toml")
     s = Settings()
     assert s.github_url == "https://api.github.com"
     assert s.ollama_host == "http://localhost:11434"
