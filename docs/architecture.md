@@ -149,7 +149,15 @@ To prevent redundant LLM embedding calculations across thousands of tickets, Rag
 
 ## Query Pipeline
 
-### 1. Intent Routing & Smart Server Targeting
+### 1. Conversational Context Resolution (Query Condensation)
+
+When conversation history is present during multi-turn chat sessions (`pixi run ragdoll chat` or Web UI), the query engine first runs a lightweight condensation step (`CONDENSE_PROMPT_TEMPLATE`). It resolves coreferences, pronouns, and implicit follow-up questions (such as *"how many of them are open?"*) into fully-specified standalone queries (*"how many open tickets in MYPROJ?"*) before passing them to the Intent Router and retrieval pipelines.
+
+- Single-turn queries bypass condensation entirely for zero added latency.
+- When active, condensation inspects the last 3 dialogue exchanges (truncated to 300 chars) for sub-second execution (~0.25s).
+- When Ragdoll is accessed as an **MCP server** (`ragdoll mcp`), query condensation is bypassed completely, leaving prompt orchestration to the external host agent.
+
+### 2. Intent Routing & Smart Server Targeting
 
 When a query is received in interactive chat, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general conceptual/knowledge question (requiring offline vector search) or asking for a real-time list/aggregation of items from external databases.
 
@@ -158,7 +166,7 @@ When a query is received in interactive chat, it first passes through the **Inte
 * **GitHub Live Queries (`GITHUB_DATABASE`)**: The LLM extracts `owner,repo,state,type` using prompt grounding with configured repositories and `github_default_owner`, querying GitHub's `/search/issues` endpoint directly.
 * **Bitbucket Live Queries (`BITBUCKET_DATABASE`)**: The LLM extracts project and repository parameters and queries the Bitbucket REST API for active pull requests.
 
-### 2. Retrieval (Knowledge Queries)
+### 3. Retrieval (Knowledge Queries)
 
 If the intent is classified as general knowledge, the **Retriever** (`VectorIndexAutoRetriever`) uses a combination of LLM reasoning and mathematical search to find the most relevant information:
 
@@ -166,7 +174,7 @@ If the intent is classified as general knowledge, the **Retriever** (`VectorInde
 2. **Embedding the Query**: The user's query text is sent to an **Embedding Model** (e.g., `nomic-embed-text`) which translates the text into a mathematical vector.
 3. **Vector Search**: ChromaDB performs a "nearest neighbor" mathematical search to find the top-K chunks whose vectors are closest to the query's vector, applying any filters extracted in step 1.
 
-### 3. Generation
+### 4. Generation
 
 Retrieved chunks are formatted as context and injected into an LLM prompt:
 
