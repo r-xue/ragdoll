@@ -109,6 +109,32 @@ Ragdoll decouples your **Generative / Chat Model** from your **Embedding Model**
   pixi run ragdoll ingest ...
   ```
 
+## Hardware & Model Selection Guide
+
+Ragdoll supports Ollama-compatible embedding and chat models. The tables below summarize tested configurations across representative developer desktop and laptop environments.
+
+### 1. Embedding Models
+
+| Model | Size | Dimensions | Context | Notes |
+|---|---|---|---|---|
+| **`bge-m3`** | 1.2 GB | 1024 | 8k | Default recommendation for technical docs, code, and Jira tickets. |
+| **`qwen3-embedding:4b`** | ~2.5 GB | 2048 | 32k | High-capacity embeddings for large codebases and long documents. |
+| **`qwen3-embedding:0.6b`** | ~0.6 GB | 1024 | 8k | Compact 1024-dim model for memory-constrained setups. |
+| **`nomic-embed-text`** | 274 MB | 768 | 2k | Lightweight baseline model. |
+
+### 2. Recommended Chat Models by Hardware Profile
+
+| Hardware Profile (Representative Environments) | Usable Memory | Fast / Low Latency | Reasoning & Code |
+|---|---|---|---|
+| **Dedicated GPU Desktop / Workstation** *(e.g. RTX 3090 / 4090, 24 GB)* | 24 GB dedicated | `gemma4:12b` (~85 tok/s) | `qwen3.8` (27B, ~32 tok/s) |
+| **Mainstream Apple Silicon Mac** *(e.g. M2 / M3 Pro, 32 GB)* | ~24 GB Metal | `gemma4:12b` (~40 tok/s) | `qwen3.8` (27B, ~16 tok/s) |
+| **High-Memory Apple Silicon Mac** *(e.g. M4 Pro / Max, 48 GB)* | ~36 GB Metal | `gemma4:26b` (MoE, ~55 tok/s) | `gemma4:31b` or `qwen3.8` |
+
+```{note}
+**Note on `gpt-oss:20b` (Default Configuration)**
+`gpt-oss:20b` (~13 GB) serves as a balanced general-purpose model with reliable query routing and solid synthesis at ~40–50 tok/s. While it is not highlighted in the table above, it remains a capable out-of-the-box baseline. Developers seeking higher interactive streaming speeds and larger context windows typically prefer `gemma4:12b`, while those requiring deeper technical reasoning and code analysis lean toward `qwen3.8`.
+```
+
 ## Settings Reference
 
 ### JIRA
