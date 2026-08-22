@@ -53,7 +53,7 @@ For project-specific settings, create `ragdoll.toml` in your working directory:
 collection_name = "my-project"
 chunk_size = 800
 chunk_overlap = 150
-top_k = 12
+top_k = 5
 ```
 
 For project-level secrets, use a `.env` file (add to `.gitignore`):
@@ -69,7 +69,37 @@ Any setting can be overridden via environment variables prefixed with `RAGDOLL_`
 
 ```bash
 RAGDOLL_CHAT_MODEL=gpt-oss:20b pixi run ragdoll chat
-RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
+RAGDOLL_TOP_K=5 pixi run ragdoll search "some query"
+```
+
+## Retrieval Tuning & Context Sizing (`top_k`)
+
+The `top_k` setting controls the number of context chunks retrieved from ChromaDB for each query or chat turn (default: **`5`**).
+
+```toml
+# ~/.ragdoll/config.toml
+top_k = 5
+```
+
+### Context Sizing Trade-Offs
+
+In local RAG systems, tuning `top_k` balances **context coverage** against **GPU prefill latency and answer precision**:
+
+| Setting | Estimated Tokens | Prefill Time (RTX 3090) | Recommended Use Case |
+|---|---|---|---|
+| **`top_k = 5`** *(Default)* | ~2,000–3,500 tokens | **< 1.0s** | **Interactive Chat (`ragdoll chat`)**: Fast, snappy streaming with high precision. |
+| **`top_k = 10`** | ~4,000–7,000 tokens | **1.0–2.5s** | **Summarization (`ragdoll summarize`) & Search**: Broader cross-document synthesis. |
+| **`top_k = 20`** | ~10,000–25,000 tokens | **5.0–15.0s** | **Deep Archival Audits**: Exhaustive coverage across large multi-year ticket histories. |
+
+```{tip}
+**Ad-Hoc CLI Override:** You can override `top_k` on any command using `-n` without editing configuration files:
+```bash
+# Retrieve top 10 chunks for a broad search
+pixi run ragdoll search "memory allocation in buffer" -n 10
+
+# Fast conversational chat with top 3 chunks
+pixi run ragdoll chat -n 3
+```
 ```
 
 ## Switching Models (Chat vs. Embedding)
