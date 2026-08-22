@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 def ingest_jira(
     jql: str,
     server: str | None = None,
+    max_results: int | None = None,
     override_url: str | None = None,
     override_user: str | None = None,
     override_token: str | None = None,
@@ -70,13 +71,38 @@ def ingest_jira(
                 server_url=server_url,
             )
 
-        documents = reader.load_data(query=jql)
-
-        # JiraReader doesn't extract components or fix_versions.
-        # Re-fetch them from the raw JIRA API so we can store them.
+        documents = []
         issues_by_id = {}
-        for issue in reader.jira.search_issues(jql, maxResults=len(documents)):
-            issues_by_id[issue.id] = issue
+        start_at = 0
+        batch_size = settings.jira_batch_size or 50
+
+        while True:
+            current_batch_size = batch_size
+            if max_results is not None:
+                remaining = max_results - len(documents)
+                if remaining <= 0:
+                    break
+                current_batch_size = min(batch_size, remaining)
+
+            batch = reader.load_data(query=jql, start_at=start_at, max_results=current_batch_size)
+            if not batch:
+                break
+
+            # JiraReader doesn't extract components or fix_versions.
+            # Re-fetch raw issues in this batch from JIRA API so we can enrich metadata.
+            try:
+                raw_batch = reader.jira.search_issues(jql, startAt=start_at, maxResults=len(batch))
+                for issue in raw_batch:
+                    issues_by_id[issue.id] = issue
+            except Exception as e:
+                logger.warning("Failed to fetch raw issue details for enrichment at startAt=%d: %s", start_at, e)
+
+            documents.extend(batch)
+
+            if len(batch) < current_batch_size:
+                break
+
+            start_at += len(batch)
 
     except Exception as e:
         logger.error('Failed to fetch from JIRA: %s', e)

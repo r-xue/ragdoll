@@ -123,6 +123,7 @@ def ingest_jira(
         n = _ingest_jira(
             jql=jql,
             server=server,
+            max_results=max_results,
             override_url=url,
             override_user=user,
             override_token=token,
