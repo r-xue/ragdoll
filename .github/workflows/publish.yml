@@ -1,10 +1,14 @@
-name: Publish to PyPI
+name: Build and Publish Package
 
 on:
+  push:
+    tags:
+      - 'v*'  # Automatically triggers on git tag pushes (e.g. git tag v0.2.0 && git push origin v0.2.0)
+
   release:
     types: [published]
 
-  # Allow manual trigger for testing against TestPyPI
+  # Allow manual trigger for testing against TestPyPI or PyPI
   workflow_dispatch:
     inputs:
       target:
@@ -17,7 +21,8 @@ on:
           - pypi
 
 permissions:
-  contents: read
+  contents: write  # Required to create GitHub Release and upload distribution artifacts
+  id-token: write  # Required for Trusted Publishing (OIDC) to PyPI / TestPyPI
 
 jobs:
   build:
@@ -27,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for setuptools-scm
+          fetch-depth: 0  # Full history for setuptools-scm versioning
 
       - uses: actions/setup-python@v5
         with:
@@ -47,6 +52,30 @@ jobs:
           name: dist
           path: dist/
 
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release with Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} dist/* \
+            --title "Ragdoll ${{ github.ref_name }}" \
+            --generate-notes
+
   publish-testpypi:
     name: Publish to TestPyPI
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
@@ -54,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
-      id-token: write  # Trusted publishing (OIDC)
+      id-token: write
 
     steps:
       - uses: actions/download-artifact@v4
@@ -68,12 +97,12 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # Trusted publishing (OIDC)
+      id-token: write
 
     steps:
       - uses: actions/download-artifact@v4
