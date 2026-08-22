@@ -35,8 +35,9 @@ chat_model = "gpt-oss:20b"
 embed_model = "nomic-embed-text"
 temperature = 0.3
 
-# Storage
-data_dir = "/home/you/.ragdoll/data"
+# Storage (optional - defaults to ~/.ragdoll/data)
+# Uncomment to use a custom location with more space or faster disk:
+# data_dir = "/mnt/nvme/ragdoll_data"
 ```
 
 ```{warning}
@@ -168,8 +169,18 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for ChromaDB |
+| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for all persistent data (ChromaDB vector store, metadata cache). ChromaDB is stored at `{data_dir}/chroma/` |
 | `collection_name` | `str` | `"ragdoll"` | ChromaDB collection name |
+
+```{tip}
+**When to customize `data_dir`:**
+- **Large datasets**: Move to a disk with more space (e.g., `/mnt/storage/ragdoll_data`)
+- **Performance**: Use faster SSD storage (e.g., `/mnt/nvme/ragdoll`)
+- **Multi-project isolation**: Separate vector databases per project
+- **Network/shared storage**: Use NFS or shared drives for team collaboration
+
+**Important:** Changing `data_dir` creates a fresh database. You'll need to re-ingest all data. To migrate existing data, manually copy the old directory to the new location before updating the config.
+```
 
 ### Chunking & Retrieval
 
