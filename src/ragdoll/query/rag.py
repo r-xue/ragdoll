@@ -53,6 +53,17 @@ Topic: {topic}
 Summary:"""
 
 
+CONDENSE_PROMPT_TEMPLATE = """\
+Given the following conversation history and a follow-up user question, rephrase the follow-up question into a complete, standalone question that incorporates all necessary context (such as specific project keys, repositories, or topics mentioned earlier).
+If the follow-up question is already complete and standalone, return it unchanged.
+Return ONLY the rephrased standalone question, nothing else. No preamble, no quotes.
+
+Chat History:
+{chat_history}
+
+Follow-up Question: {question}
+Standalone Question:"""
+
 INTENT_PROMPT = """\
 Determine if the user's question requires searching a LIVE DATABASE for a list/aggregation of items.
 Reply ONLY with "JIRA_DATABASE" (for Jira issues/tickets), "BITBUCKET_DATABASE" (for Bitbucket pull requests), "GITHUB_DATABASE" (for GitHub issues/PRs), or "KNOWLEDGE" (for technical documentation and general questions).
@@ -65,6 +76,13 @@ You are an expert Atlassian JIRA administrator.
 Convert the user's natural language request into a valid JQL (Jira Query Language) string.
 Return ONLY the raw JQL string, nothing else. No markdown formatting, no explanations.
 
+Important Rules:
+- JIRA project keys are uppercase short alphanumeric identifiers (e.g. MYPROJ, CORE, PROJA, MAIN).
+- Do NOT include organization or server names (e.g. "myorg", "enterprise", "company", "jira") inside the project key.
+- Example: "tickets in the myorg MYPROJ project" -> project = MYPROJ
+- Example: "how many tickets in enterprise PROJA" -> project = PROJA
+- Example: "open bugs in CORE" -> project = CORE AND statusCategory != Done AND type = Bug
+
 User Request: {question}
 JQL:"""
 
@@ -73,7 +91,7 @@ You are an expert Bitbucket administrator.
 Extract the project key, repository slug, and state (OPEN, MERGED, DECLINED, or ALL) from the user's request.
 Return ONLY a comma-separated string: project,repo,state
 If a value is not specified, guess a reasonable default. Do NOT use 'bitbucket' as a project or repo name.
-(Hint: if the user mentions 'pipeline', the project is usually 'PIPE' and the repo is 'pipeline').
+(Hint: project keys are typically short uppercase identifiers like 'PROJ' and repo names are lowercase slugs like 'service').
 
 User Request: {question}
 Params:"""
@@ -201,7 +219,22 @@ def query_live_jira(jql: str) -> str:
                 "projects": cfg.get("projects", []),
             })
 
-    # Extract requested project keys from JQL (e.g. project = PIPE, project in (PIPE, CAS))
+    # Clean accidental server/org names from project clause (e.g. project = "myorg MYPROJ" -> project = MYPROJ)
+    known_server_keys = {k.lower() for k in settings.jira_servers.keys()} | {"jira", "primary", "secondary", "enterprise", "cloud", "server", "myorg"}
+    def _clean_project_clause(match: re.Match) -> str:
+        raw_val = match.group(1) or match.group(2) or match.group(3) or ""
+        tokens = [t for t in re.findall(r"[A-Za-z0-9_]+", raw_val) if t.upper() not in ("AND", "OR", "NOT", "IN", "IS", "NULL", "EMPTY")]
+        if len(tokens) > 1:
+            filtered = [t for t in tokens if t.lower() not in known_server_keys]
+            chosen = filtered[-1] if filtered else tokens[-1]
+            return f"project = {chosen.upper()}"
+        elif len(tokens) == 1:
+            return f"project = {tokens[0].upper()}"
+        return match.group(0)
+
+    jql = re.sub(r"project\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([A-Za-z0-9_]+))", _clean_project_clause, jql, flags=re.IGNORECASE)
+
+    # Extract requested project keys from JQL (e.g. project = MYPROJ, project in (PROJA, PROJB))
     project_matches = re.findall(r'project\s*(?:=|in)\s*\(?([A-Za-z0-9_,\s]+)\)?', jql, re.IGNORECASE)
     requested_projects = set()
     for match in project_matches:
@@ -477,9 +510,40 @@ def chat_with_context(
             role = MessageRole(msg["role"])
             llama_messages.append(ChatMessage(role=role, content=msg["content"]))
     else:
+        # Context resolution: Reformulate follow-up questions using prior chat history
+        search_query = user_query
+        if len(messages) > 1:
+            history_lines = []
+            for m in messages[:-1]:
+                if m.get("role") in ("user", "assistant"):
+                    role_label = "User" if m["role"] == "user" else "Assistant"
+                    content_snippet = m["content"].strip()
+                    if len(content_snippet) > 300:
+                        content_snippet = content_snippet[:300] + "..."
+                    history_lines.append(f"{role_label}: {content_snippet}")
+
+            chat_history_str = "\n".join(history_lines[-6:])
+            if chat_history_str.strip():
+                try:
+                    condense_msg = Settings.llm.chat([
+                        ChatMessage(
+                            role=MessageRole.USER,
+                            content=CONDENSE_PROMPT_TEMPLATE.format(
+                                chat_history=chat_history_str,
+                                question=user_query,
+                            ),
+                        )
+                    ])
+                    condensed = condense_msg.message.content.strip().strip("\'\"")
+                    if condensed and len(condensed) >= 3 and not condensed.lower().startswith("error"):
+                        logger.info("Conversational Context Resolved: '%s' -> '%s'", user_query, condensed)
+                        search_query = condensed
+                except Exception as e:
+                    logger.debug("Query condensation failed: %s", e)
+
         # Route query: Database vs Knowledge
         try:
-            intent_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=user_query))])
+            intent_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=search_query))])
             intent = intent_msg.message.content.strip().upper()
             logger.info("Query Intent Classified as: %s", intent)
         except Exception as e:
@@ -489,7 +553,7 @@ def chat_with_context(
         if "JIRA_DATABASE" in intent or ("DATABASE" in intent and "BITBUCKET" not in intent and "GITHUB" not in intent):
             logger.info("Routing query to Live JIRA Database...")
             try:
-                jql_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=user_query))])
+                jql_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=search_query))])
                 jql = jql_msg.message.content.strip()
                 jql = re.sub(r"^```jql\s*|```\s*$", "", jql, flags=re.IGNORECASE).strip()
                 logger.info("Generated JQL: %s", jql)
@@ -504,7 +568,7 @@ def chat_with_context(
             logger.info("Routing query to Live Bitbucket Database...")
             try:
                 bb_msg = Settings.llm.chat(
-                    [ChatMessage(role=MessageRole.USER, content=BITBUCKET_PARAM_GENERATOR_PROMPT.format(question=user_query))])
+                    [ChatMessage(role=MessageRole.USER, content=BITBUCKET_PARAM_GENERATOR_PROMPT.format(question=search_query))])
                 params_str = bb_msg.message.content.strip()
 
                 project, repo, state = "UNKNOWN", "UNKNOWN", "ALL"
@@ -531,7 +595,7 @@ def chat_with_context(
                 default_owner = settings.github_default_owner or "None"
 
                 prompt_text = GITHUB_PARAM_GENERATOR_PROMPT.format(
-                    question=user_query,
+                    question=search_query,
                     known_repos=known_repos_str,
                     default_owner=default_owner,
                 )
@@ -562,7 +626,7 @@ def chat_with_context(
 
         else:
             # Retrieve context.
-            results = search(user_query, top_k=top_k, source_filter=source_filter)
+            results = search(search_query, top_k=top_k, source_filter=source_filter)
             context = _format_context(results) if results else "(No relevant context found.)"
             system_content = f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
 

@@ -38,13 +38,27 @@ pixi run ragdoll chat --source code -n 12
 
 ### Chat Features
 
-- **Multi-turn context** — conversation history accumulates within a session
+- **Multi-turn context & query condensation** — conversation history accumulates and follow-up references are automatically resolved
+- **Conversational follow-ups** — ask follow-up questions like *"How many of them are open?"* without repeating project or repo names
 - **Persistent history** — arrow-up/down recalls previous questions across
   sessions (stored in `~/.ragdoll/chat_history`, capped at 500 entries)
 - **Full line editing** — backspace, arrow keys, Home/End all work
 - **Source filtering** — `--source` limits retrieval to a specific data source
 - **Streaming** — responses are streamed token-by-token
 - **Live Database Querying** — ask questions like *"List all open bugs for the PROJ project"* or *"Show me PRs by author"*. The Intent Router will detect this and automatically query the live Jira/Bitbucket APIs instead of the vector database.
+
+### Multi-Turn Conversational Follow-ups
+
+Ragdoll automatically resolves pronouns, ellipses, and implicit context across chat turns using background query condensation:
+
+```text
+You: How many tickets in the MYPROJ project?
+Ragdoll: [Live JIRA Database] There are 3,136 total tickets in MYPROJ.
+
+You: How many of them are open?
+Ragdoll: [Generated JQL: project = MYPROJ AND statusCategory != Done]
+There are 428 open tickets currently in MYPROJ.
+```
 
 ### Chat Commands
 
