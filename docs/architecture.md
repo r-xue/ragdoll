@@ -138,6 +138,15 @@ Embeddings are stored in a persistent ChromaDB collection with cosine
 similarity. Each chunk's metadata (source type, file path, JIRA key, etc.)
 is stored alongside the embedding for filtering.
 
+### 5. Incremental Ingestion & Change Detection
+
+To prevent redundant LLM embedding calculations across thousands of tickets, Ragdoll implements an incremental diffing mechanism:
+
+- **Server Namespacing**: Document IDs are namespaced as `jira-{server}-{key}` (e.g. `jira-primary-PROJ-101`), isolating records across multi-site instances and preventing cross-instance ID collisions.
+- **Metadata Timestamp Diffing**: When a batch of issues is retrieved, Ragdoll checks ChromaDB for existing records using `collection.get(ids=..., include=["metadatas"])`.
+- **Skipping Unchanged Nodes**: If an issue exists and its `updated` timestamp is $\le$ the timestamp recorded in ChromaDB, the issue is skipped immediately without invoking the Ollama embedding model.
+- **Batched Vector Upsert**: Only newly discovered or modified issues are batched into groups of 64 and inserted via `index.insert_nodes()` for high throughput.
+
 ## Query Pipeline
 
 ### 1. Intent Routing & Smart Server Targeting

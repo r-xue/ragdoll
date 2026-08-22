@@ -99,11 +99,13 @@ def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: in
 @click.option("--auth-method", type=click.Choice(["pat", "basic"]), default=None, help="Auth method (overrides config).")
 @click.option("--server", type=str, default=None, help="Name of the Jira server config to use.")
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
+@click.option("-f", "--force", is_flag=True, help="Force re-indexing of all issues even if unchanged.")
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
 def ingest_jira(
     jql: str,
     server: str | None,
     max_results: int | None,
+    force: bool,
     url: str | None,
     user: str | None,
     token: str | None,
@@ -124,6 +126,7 @@ def ingest_jira(
             jql=jql,
             server=server,
             max_results=max_results,
+            force=force,
             override_url=url,
             override_user=user,
             override_token=token,

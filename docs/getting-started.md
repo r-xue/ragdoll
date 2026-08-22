@@ -38,6 +38,7 @@ pixi install
 
 # Verify the installation
 pixi run ragdoll --version
+pixi run ragdoll --help
 pixi run ragdoll status
 ```
 

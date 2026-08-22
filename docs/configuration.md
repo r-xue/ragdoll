@@ -81,7 +81,7 @@ RAGDOLL_TOP_K=20 pixi run ragdoll search "some query"
 | `jira_user` | `str` | `""` | JIRA username |
 | `jira_token` | `str` | `""` | API token or Personal Access Token |
 | `jira_auth_method` | `str` | `"pat"` | `"pat"` (Data Center) or `"basic"` (Cloud) |
-| `jira_batch_size` | `int` | `50` | Issues fetched per API call |
+| `jira_batch_size` | `int` | `100` | Issues fetched per API call |
 
 ### GitHub
 

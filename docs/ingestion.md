@@ -34,6 +34,19 @@ pixi run ragdoll ingest jira --jql "project in (MAIN, OTHER) AND updated >= -60d
 JIRA ingestion extracts the full issue structure: summary, description,
 comments, status, components, labels, and fix versions.
 
+### Incremental Ingestion & Change Detection
+
+Ragdoll automatically tracks issue modification timestamps (`updated_at_ts`) in ChromaDB. On repeated runs:
+- **Unchanged issues** are automatically skipped, eliminating redundant Ollama embedding compute.
+- **New or modified issues** are embedded and upserted into the vector store.
+
+To force re-embedding of all matching tickets regardless of timestamps, pass `-f` / `--force`:
+
+```bash
+# Force full re-indexing of all matching tickets
+pixi run ragdoll ingest jira --server primary --jql "project = MAIN" --force
+```
+
 ```{note}
 JIRA Data Center uses Personal Access Tokens (PATs) with Bearer auth
 (`jira_auth_method = "pat"`). JIRA Cloud uses basic auth with API tokens
@@ -122,3 +135,12 @@ the defaults (1000 chars / 200 chars overlap):
 pixi run ragdoll ingest pdf ./docs/ --chunk-size 500 --chunk-overlap 100
 ```
 
+
+## Verbose Progress & Debugging
+
+For large ingestion tasks (such as thousands of Jira issues or commit histories), pass `-v` or `--verbose` right after `ragdoll` to view live batch progress and debug logging:
+
+```bash
+# Ingest with live batch-by-batch progress
+pixi run ragdoll -v ingest jira --server primary --jql "project = MAIN"
+```
