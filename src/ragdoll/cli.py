@@ -203,7 +203,7 @@ def ingest_github_cmd(
     from ragdoll.store.vectordb import count
 
     with console.status(f"[bold cyan]Fetching and embedding GitHub Issues/PRs from {owner}/{repo}…"):
-        n = _ingest_github(
+        n, num_issues, num_prs = _ingest_github(
             owner=owner,
             repo=repo,
             state=state,
@@ -216,7 +216,7 @@ def ingest_github_cmd(
         console.print("[yellow]No Issues or PRs found or ingested.[/yellow]")
         return
 
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
+    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) ([cyan]{num_issues}[/cyan] Issues, [cyan]{num_prs}[/cyan] Pull Requests) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 

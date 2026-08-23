@@ -218,7 +218,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 |-----|------|---------|-------------|
 | `chunk_size` | `int` | `1000` | Max characters per chunk |
 | `chunk_overlap` | `int` | `200` | Overlap between consecutive chunks |
-| `top_k` | `int` | `20` | Default number of chunks to retrieve |
+| `top_k` | `int` | `5` | Default number of chunks to retrieve |
 
 ### Multi-Server GitHub & Repository Mapping
 

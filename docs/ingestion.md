@@ -87,6 +87,18 @@ search and chat across all sites together.
 | `--token` | API token / PAT (overrides config) |
 | `--auth-method` | `pat` or `basic` (overrides config) |
 
+## Bitbucket Server (Data Center) Pull Requests
+
+```bash
+# Ingest all PRs (Open, Merged, and Declined) from a project repository
+pixi run ragdoll ingest bitbucket --server primary --project PROJ --repo backend --state ALL
+
+# Ingest only open PRs
+pixi run ragdoll ingest bitbucket --server primary --project PROJ --repo backend --state OPEN
+```
+
+Bitbucket ingestion extracts PR titles, descriptions, author information, status, and full chronological discussion and review activity threads.
+
 ## GitHub Issues & Pull Requests
 
 ```bash
@@ -125,6 +137,18 @@ LLM coherent context to reason about.
 
 Directories like `__pycache__`, `.git`, `.venv`, and `.pixi` are
 automatically skipped.
+
+## Git Repository History
+
+```bash
+# Ingest the last 1000 commits from a local git repository
+pixi run ragdoll ingest git /path/to/local/repo
+
+# Ingest up to 5000 commits
+pixi run ragdoll ingest git /path/to/local/repo --max-commits 5000
+```
+
+Git ingestion extracts commit hashes, parents, branch/tag references, authors, dates, subject lines, and commit bodies across the entire repository graph.
 
 ## Chunking Options
 
