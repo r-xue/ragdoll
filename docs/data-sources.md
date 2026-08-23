@@ -162,7 +162,7 @@ Fetches pull requests and their activity threads from an on-premise Bitbucket Se
 - A chronological thread of all comments, approvals, and merges
 
 ```{note}
-**Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Python Source Code](#python-source-code)).
+**Scope:** This module *only* ingests Pull Request metadata and discussions. It does **not** clone or ingest the repository's source code files. To ingest actual codebase files, use the `ragdoll ingest code` command (see [Source Code](#source-code-multi-language)).
 ```
 
 ### Example
@@ -270,55 +270,70 @@ pixi run ragdoll ingest github --server enterprise myorg internal-service --stat
 | `updated_at_ts` | `float` | Unix timestamp of last update |
 
 
-## Python Source Code
+## Source Code (Multi-Language)
 
 **Module:** `ragdoll.ingest.code`
 
-Uses Python's built-in `ast` module to parse source files into semantically
-meaningful units rather than blind text splitting. 
+Ingests source code repositories and directories across multiple programming languages, templates, markup files, and build configurations.
 
-When you use a traditional text chunker, it slices a document by character count, which frequently cuts loops, conditionals, and functions in half. By parsing the **Abstract Syntax Tree (AST)** instead, Ragdoll ensures that the LLM is given complete, unbroken functions and classes. This preserves the semantic context of the code.
+Rather than blindly splitting source files by arbitrary character counts, Ragdoll applies language-aware extraction techniques to preserve structural boundaries (classes, functions, subroutines, modules). This ensures the LLM receives complete, coherent code blocks rather than fragmented snippets.
 
-### Extraction Strategy
+### Complete List of Supported Languages & Formats
 
-| AST Node | Document Type | Content |
-|----------|--------------|---------|
-| `FunctionDef` / `AsyncFunctionDef` | `function` | Full function source with file path header |
-| `ClassDef` | `class` | Full class source (including all methods) |
-| Module docstring | `module_doc` | Module-level docstring with file path |
-| Syntax error | `raw` | Entire file as raw text (fallback) |
+| Category | Language / Format | Extensions / Special Filenames | Extraction Strategy |
+|---|---|---|---|
+| **Python** | Python | `.py` | **AST Parser**: Extracts discrete `def`, `async def`, `class` (with all methods), and module-level docstrings with exact line numbers. |
+| **C / C++ & GPU** | C, C++, CUDA | `.cpp`, `.cc`, `.cxx`, `.c`, `.hpp`, `.hh`, `.hxx`, `.h`, `.tcc`, `.cu`, `.cuh` | **Semantic Block Parser**: Extracts `class`, `struct`, namespace, and function implementations, preserving header and signature context. |
+| **Fortran** | Fortran 77 / 90 / 95 | `.f`, `.for`, `.f90`, `.f95` | **Routine Scanner**: Detects and extracts `subroutine`, `function`, `module`, and `program` blocks along with parameter declarations. |
+| **Shell & Scripting** | Bash, POSIX Shell, Zsh | `.sh`, `.bash`, `.zsh` | Chunks script logic with file path headers and line number annotations. |
+| **Templates & Markup** | XML Tasks & Recipes, Mako Web Templates | `.xml`, `.mako` | Structured chunking preserving XML data/task definitions, workflow procedures, and Mako HTML templates. |
+| **Build & Tooling** | CMake, Make, Docker | `CMakeLists.txt`, `.cmake`, `Makefile`, `Dockerfile` | Target-aware chunking preserving build targets, flags, and recipe rules. |
+| **Modern Systems** | Rust, Go | `.rs`, `.go` | Context-aware code chunking with syntax metadata. |
+| **Web & Frontend** | JavaScript, TypeScript | `.js`, `.jsx`, `.ts`, `.tsx` | Syntax-aware component and script chunking. |
+| **Database & Config** | SQL, TOML, YAML, JSON | `.sql`, `.toml`, `.yaml`, `.yml`, `.json` | Query and structured configuration chunking. |
 
-### Metadata
+### Small File Handling & Context Headers
 
-Each code document includes rich metadata:
+- **Small Files (<= 30 lines or <= chunk_size)**: Kept intact as a single Document (`node_type = "file"`) to prevent unnecessary fragmentation.
+- **Large Files**: Sliced into semantic blocks or coherent overlapping chunks (`node_type = "chunk"` or `"function"`/`"class"`).
+- **Context Injection**: Every extracted chunk is prefixed with a comment header (e.g. `// File: src/engine.cpp (class: Engine, lines 40-120)`) so the LLM always knows the origin file path and exact line range for citations.
 
-```python
-{
-    "source": "code",
-    "filepath": "src/ragdoll/config.py",
-    "node_type": "class",       # function, class, module_doc, raw
-    "name": "Settings",
-    "lineno": 42,
-    "end_lineno": 127,
-}
-```
+### Extracted Metadata
 
-### Ignored Directories
+| Metadata Key | Type | Description |
+|---|---|---|
+| `source` | `str` | `"code"` |
+| `filepath` | `str` | Relative or absolute path to the source file |
+| `language` | `str` | Normalized language identifier (e.g. `python`, `cpp`, `fortran`, `xml`, `shell`) |
+| `node_type` | `str` | Node type (`function`, `class`, `struct`, `subroutine`, `module_doc`, `file`, `chunk`) |
+| `name` | `str` | Name of the function, class, subroutine, or file |
+| `lineno` | `int` | Starting line number in the source file |
+| `end_lineno` | `int` | Ending line number in the source file |
 
-The following directories are automatically skipped during recursive walks:
+### Automatic Ignore Rules
 
-- `__pycache__`, `.git`, `.pixi`, `.tox`
-- `.venv`, `venv`, `node_modules`
-- `*.egg-info`, `.eggs`
+During directory traversal, the following directories and binary file extensions are automatically skipped:
 
-### Example
+* **Ignored Directories**: `__pycache__`, `.git`, `.pixi`, `.tox`, `.venv`, `venv`, `node_modules`, `build`, `dist`, `.mypy_cache`, `.pytest_cache`, `*.egg-info`
+* **Ignored Artifacts**: `.o`, `.so`, `.a`, `.dylib`, `.dll`, `.exe`, `.class`, `.pyc`, `.pyo`, `.tar`, `.gz`, `.zip`, `.bin`, `.dat`, `.png`, `.jpg`, `.pdf`
+
+### CLI Usage & Extension Filtering
 
 ```bash
-# Ingest a full project
-pixi run ragdoll ingest code ./src/
+# Ingest all supported source files across a repository
+pixi run ragdoll ingest code /path/to/repo
 
-# Ingest a single module
-pixi run ragdoll ingest code ./src/ragdoll/query/rag.py
+# Ingest specific source directories
+pixi run ragdoll ingest code ./src/ ./include/ ./recipes/
+
+# Filter by specific extensions (e.g. only C++ and Python)
+pixi run ragdoll ingest code /path/to/repo --ext cpp,cc,h,hpp,py
+
+# Ingest specific XML task recipes and Mako templates
+pixi run ragdoll ingest code ./templates/recipes/ --ext xml,mako
+
+# Customize chunk sizing for non-AST source files
+pixi run ragdoll ingest code ./src/ --chunk-size 1200 --chunk-overlap 150
 ```
 
 ## Git Repository History
