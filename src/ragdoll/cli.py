@@ -275,20 +275,35 @@ def ingest_code(
 
 @ingest.command("git")
 @click.argument("repo_path", type=click.Path(exists=True))
-@click.option("--max-commits", type=int, default=1000, help="Max commits to fetch.")
-def ingest_git_cmd(repo_path: str, max_commits: int) -> None:
-    """Ingest git commit history from a local repository."""
+@click.option("--max-commits", type=int, default=2000, help="Max commits to fetch (0 for full history). Default: 2000.")
+@click.option("--all", "all_commits", is_flag=True, default=False, help="Ingest all commits (full repository history).")
+@click.option("--no-merges", is_flag=True, default=False, help="Exclude merge commits from ingestion.")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all matching commits.")
+def ingest_git_cmd(repo_path: str, max_commits: int, all_commits: bool, no_merges: bool, force: bool) -> None:
+    """Ingest git commit history from a local repository with incremental skipping."""
     from ragdoll.ingest.git import ingest_git as _ingest_git
     from ragdoll.store.vectordb import count
 
-    with console.status(f"[bold cyan]Fetching git commits from {repo_path}…"):
-        n = _ingest_git(repo_path=repo_path, max_commits=max_commits)
+    status_msg = f"[bold cyan]Scanning git commits from {repo_path}…"
+    with console.status(status_msg):
+        new_count, skipped_count = _ingest_git(
+            repo_path=repo_path,
+            max_commits=max_commits,
+            all_commits=all_commits,
+            no_merges=no_merges,
+            force=force,
+        )
 
-    if n == 0:
-        console.print("[yellow]No commits found or ingested.[/yellow]")
+    if new_count == 0 and skipped_count == 0:
+        console.print("[yellow]No commits found.[/yellow]")
         return
 
-    console.print(f"  💾 Stored [green]{n}[/green] commit(s) in vector DB")
+    if new_count > 0:
+        skip_str = f" ([dim]{skipped_count} already up-to-date skipped[/dim])" if skipped_count > 0 else ""
+        console.print(f"  💾 Stored [green]{new_count}[/green] new commit(s){skip_str} in vector DB")
+    else:
+        console.print(f"  ✨ All [green]{skipped_count}[/green] commits are already indexed and up-to-date in ChromaDB.")
+
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
