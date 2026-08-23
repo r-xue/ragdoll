@@ -16,7 +16,9 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull the required models
 ollama pull nomic-embed-text    # embedding model
-ollama pull gpt-oss:20b          # chat model (or a smaller alternative)
+ollama pull gpt-oss:20b          # chat model (Linux / Windows with NVIDIA)
+# Or on Apple Silicon Mac:
+# ollama pull qwen3.8:27b-mlx   # optimized for Apple Silicon MLX framework
 
 # Verify models are available
 ollama list
@@ -24,6 +26,16 @@ ollama list
 
 ```{note}
 `gpt-oss:20b` requires ~13 GB of VRAM. For a fully CPU-resident option, use a smaller model.
+```
+
+```{tip}
+**Apple Silicon (M1/M2/M3/M4) Optimization with `-mlx` Tags:**
+
+If you are running Ragdoll on an Apple Silicon Mac, consider pulling models with the `-mlx` tag (e.g. `qwen3.8:27b-mlx`, `gemma4:12b-mlx`).
+
+- **Architecture**: Standard Ollama models use the GGUF format powered by `llama.cpp`. The `-mlx` variants run natively via Apple's **MLX machine learning framework**, designed exclusively for Apple Silicon.
+- **Performance**: MLX models directly leverage Apple Silicon’s unified memory architecture and Metal GPU optimizations, delivering substantially faster token generation (eval rate), lower prompt-processing latency, and improved memory throughput.
+- **Platform Compatibility**: `-mlx` models run exclusively on Apple Silicon macOS (M1/M2/M3/M4). (For Linux or Windows systems with NVIDIA GPUs, use standard GGUF models).
 ```
 
 ## Installation

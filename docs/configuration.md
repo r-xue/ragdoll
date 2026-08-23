@@ -31,7 +31,7 @@ github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 github_url = "https://api.github.com" 
 
 # Model preferences
-chat_model = "gpt-oss:20b"
+chat_model = "gpt-oss:20b"          # Linux/Windows (or "qwen3.8:27b-mlx" on Apple Silicon)
 embed_model = "nomic-embed-text"
 temperature = 0.3
 
@@ -330,3 +330,30 @@ You can also use environment variables for scripting multi-site ingestion:
     RAGDOLL_JIRA_TOKEN=OTHER_PAT \
     pixi run ragdoll ingest jira --jql "project = EXT"
 ```
+
+
+## Security, Privacy & Storage Considerations
+
+Ragdoll persists all document chunk embeddings and metadata in a local [ChromaDB](https://www.trychroma.com/) collection.
+
+### Plaintext Storage in ChromaDB
+
+By design, ChromaDB couples an HNSW vector index with an embedded SQLite database (`chroma.sqlite3`). The SQLite database stores:
+- **Full raw document chunks in plaintext** (parsed source code, Jira ticket discussions, PR reviews, PDF text).
+- **All accompanying metadata** (file paths, author usernames, repository names, timestamps).
+
+```{warning}
+**Never commit or publicly share raw ChromaDB storage directories (`~/.ragdoll/data/` or `chroma.sqlite3`)!**
+
+Anyone with access to the `chroma.sqlite3` database file can open it with standard SQLite tools to inspect and extract all ingested source text and metadata directly.
+```
+
+### Team Collaboration & Sharing Best Practices
+
+- **Share Ingestion Recipes, Not Raw Databases**: Distribute project configuration (`ragdoll.toml`) and ingestion scripts (`scripts/examples.sh`) so each team member builds their own local vector database from sources they are already authorized to access.
+- **Restrict File Permissions**:
+  ```bash
+  chmod 700 ~/.ragdoll
+  chmod 600 ~/.ragdoll/config.toml
+  ```
+- **Git Exclusion**: Verify that `.sqlite3`, `.ragdoll/`, and local data directories are always excluded in `.gitignore`.
