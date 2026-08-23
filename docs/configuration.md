@@ -31,7 +31,7 @@ github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 github_url = "https://api.github.com" 
 
 # Model preferences
-chat_model = "gpt-oss:20b"
+chat_model = "gpt-oss:20b"          # Linux/Windows (or "qwen3.8:27b-mlx" on Apple Silicon)
 embed_model = "nomic-embed-text"
 temperature = 0.3
 

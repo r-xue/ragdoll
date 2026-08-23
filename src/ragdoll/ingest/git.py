@@ -173,10 +173,32 @@ def ingest_git(
     if not new_docs:
         return (0, skipped_count)
 
-    from rich.progress import track
+    from rich.progress import (
+        Progress,
+        TextColumn,
+        BarColumn,
+        TaskProgressColumn,
+        MofNCompleteColumn,
+        TimeRemainingColumn,
+    )
+    from rich.console import Console
+
+    console = Console()
     index = get_index()
-    for doc in track(new_docs, description="Embedding git commits...", console=None):
-        index.insert(doc)
+
+    with Progress(
+        TextColumn("[bold cyan]{task.description}"),
+        BarColumn(bar_width=35),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("Embedding git commits...", total=len(new_docs))
+        for doc in new_docs:
+            index.insert(doc)
+            progress.advance(task)
 
     logger.info("Successfully indexed %d new git commits.", len(new_docs))
     return (len(new_docs), skipped_count)

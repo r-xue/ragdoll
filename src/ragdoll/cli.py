@@ -216,7 +216,8 @@ def ingest_github_cmd(
         console.print("[yellow]No Issues or PRs found or ingested.[/yellow]")
         return
 
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) ([cyan]{num_issues}[/cyan] Issues, [cyan]{num_prs}[/cyan] Pull Requests) in vector DB")
+    console.print(
+        f"  💾 Stored [green]{n}[/green] chunk(s) ([cyan]{num_issues}[/cyan] Issues, [cyan]{num_prs}[/cyan] Pull Requests) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
@@ -284,15 +285,14 @@ def ingest_git_cmd(repo_path: str, max_commits: int, all_commits: bool, no_merge
     from ragdoll.ingest.git import ingest_git as _ingest_git
     from ragdoll.store.vectordb import count
 
-    status_msg = f"[bold cyan]Scanning git commits from {repo_path}…"
-    with console.status(status_msg):
-        new_count, skipped_count = _ingest_git(
-            repo_path=repo_path,
-            max_commits=max_commits,
-            all_commits=all_commits,
-            no_merges=no_merges,
-            force=force,
-        )
+    console.print(f"[bold cyan]Scanning git commits from {repo_path}…[/bold cyan]")
+    new_count, skipped_count = _ingest_git(
+        repo_path=repo_path,
+        max_commits=max_commits,
+        all_commits=all_commits,
+        no_merges=no_merges,
+        force=force,
+    )
 
     if new_count == 0 and skipped_count == 0:
         console.print("[yellow]No commits found.[/yellow]")
