@@ -15,14 +15,25 @@ __pycache__/
 dist/
 build/
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Environment secrets
+# Environment secrets & user configs
 .env
+.env.*
+ragdoll.toml
 
-# Ragdoll data
+# Ragdoll storage & vector databases
 .ragdoll/
+data/
+chroma/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 
-# IDE
+# IDE / Editor
 .vscode/
 .idea/
 *.code-workspace
@@ -30,6 +41,9 @@ build/
 # Sphinx docs build
 docs/_build/
 
+# Logs
+*.log
+casa-*.log
 
 # Notes
 notes/
