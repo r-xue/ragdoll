@@ -119,10 +119,14 @@ def _format_context(results: list[SearchResult]) -> str:
     for r in results:
         source = r.metadata.get("doc_id", r.chunk_id)
 
-        # Build a metadata header for the chunk to preserve context
-        meta_str = ", ".join(f"{k}: {v}" for k, v in r.metadata.items() if k != "doc_id")
+        # Keep metadata concise to minimize prompt token overhead
+        meta_items = []
+        for key in ("source", "key", "title", "status", "author", "repo", "project"):
+            if key in r.metadata and r.metadata[key]:
+                meta_items.append(f"{key}: {r.metadata[key]}")
+        meta_str = " | ".join(meta_items) if meta_items else "source: unknown"
 
-        parts.append(f"[{source}] (Meta: {meta_str})\n{r.text.strip()}")
+        parts.append(f"[{source}] ({meta_str})\n{r.text.strip()}")
     return "\n\n".join(parts)
 
 
@@ -636,11 +640,11 @@ def chat_with_context(
         # Build augmented message list with context as system prompt.
         llama_messages.append(ChatMessage(role=MessageRole.SYSTEM, content=system_content))
 
-        # Add conversation history
-        for msg in messages:
-            if msg["role"] != "system":
-                role = MessageRole(msg["role"])
-                llama_messages.append(ChatMessage(role=role, content=msg["content"]))
+        # Add recent conversation history (last 3 exchanges / 6 messages)
+        recent_messages = [m for m in messages if m.get("role") != "system"][-6:]
+        for msg in recent_messages:
+            role = MessageRole(msg["role"])
+            llama_messages.append(ChatMessage(role=role, content=msg["content"]))
 
     if stream:
         resp = Settings.llm.stream_chat(llama_messages)

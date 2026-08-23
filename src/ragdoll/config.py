@@ -195,7 +195,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200  # overlap between consecutive chunks
 
     # ── Retrieval ──────────────────────────────────────────────────────
-    top_k: int = 20  # number of chunks to retrieve
+    top_k: int = 5  # number of chunks to retrieve (default: 5)
 
     @property
     def chroma_dir(self) -> Path:
@@ -280,6 +280,7 @@ def setup_llamaindex():
         base_url=settings.ollama_host,
         temperature=settings.temperature,
         request_timeout=600.0,
+        additional_kwargs={"num_predict": 2048},
     )
     LlamaSettings.embed_model = OllamaEmbed(
         model_name=settings.embed_model,
