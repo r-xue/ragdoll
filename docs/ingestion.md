@@ -115,28 +115,26 @@ pixi run ragdoll ingest github myorg myrepo --token YOUR_GITHUB_PAT
 GitHub ingestion extracts the full discussion context: issue title, description,
 author, state (open/closed), creation date, and chronological comment threads.
 
-## Python Source Code
+## Source Code (Multi-Language)
 
 ```bash
-# Ingest a source tree
-pixi run ragdoll ingest code ./src/
+# Ingest all supported source files in a repository
+pixi run ragdoll ingest code /path/to/repo
 
-# Single file
-pixi run ragdoll ingest code ./src/ragdoll/config.py
+# Ingest specific files or folders
+pixi run ragdoll ingest code ./src/ ./include/
+
+# Ingest only specific file types (e.g. C++ and Python)
+pixi run ragdoll ingest code /path/to/repo --ext py,cpp,h,xml
 ```
 
-Code ingestion uses Python's `ast` module to parse source files into
-semantically meaningful units:
+Ragdoll supports 30+ source code and markup file types (Python, C/C++, CUDA, Fortran, Shell, XML, Mako, CMake, Rust, Go, TypeScript, etc.). Code files are parsed using language-aware extractors (AST, semantic block parsing, routine boundary scanners) to keep functions, classes, and subroutines intact.
 
-- **Functions** — each top-level `def` / `async def` becomes a document
-- **Classes** — each `class` (including all methods) becomes a document
-- **Module docstrings** — extracted as separate documents
+Build directories (`__pycache__`, `.git`, `.venv`, `.pixi`, `build`, `dist`) and compiled binaries (`.o`, `.so`, `.a`, `.pyc`) are automatically skipped.
 
-This preserves code boundaries rather than blindly splitting text, giving the
-LLM coherent context to reason about.
-
-Directories like `__pycache__`, `.git`, `.venv`, and `.pixi` are
-automatically skipped.
+```{seealso}
+For the full matrix of all supported file extensions, parsing mechanisms, and metadata schemas, see **[Data Sources: Source Code](data-sources.md#source-code-multi-language)**.
+```
 
 ## Git Repository History
 

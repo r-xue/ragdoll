@@ -222,30 +222,48 @@ def ingest_github_cmd(
 
 @ingest.command("code")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
+@click.option("--ext", default=None, help="Comma-separated extensions to filter (e.g. .py,.cpp,.h,.xml).")
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
-def ingest_code(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: int | None) -> None:
-    """Ingest Python source files or directories of Python code."""
+def ingest_code(
+    paths: tuple[str, ...],
+    ext: str | None,
+    chunk_size: int | None,
+    chunk_overlap: int | None,
+) -> None:
+    """Ingest source code files or repositories (Python, C/C++, Fortran, Shell, etc.)."""
+    import collections
     from ragdoll.ingest.code import ingest_code as _ingest_code
     from ragdoll.store.vectordb import count, get_index
 
     if not paths:
-        console.print("[red]Error:[/red] Provide at least one Python file or directory.")
+        console.print("[red]Error:[/red] Provide at least one source file or directory.")
         raise SystemExit(1)
 
     code_paths = [Path(p) for p in paths]
+    ext_set = None
+    if ext:
+        ext_set = {f".{e.strip().lstrip(".").lower()}" for e in ext.split(",") if e.strip()}
 
-    with console.status("[bold cyan]Parsing Python source files…"):
-        docs = _ingest_code(code_paths)
+    with console.status("[bold cyan]Parsing source files across supported languages…"):
+        docs = _ingest_code(
+            code_paths,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            extensions=ext_set,
+        )
 
     if not docs:
-        console.print("[yellow]No Python documents extracted.[/yellow]")
+        console.print("[yellow]No source code documents extracted.[/yellow]")
         return
 
-    console.print(f"  🐍 Extracted [green]{len(docs)}[/green] code unit(s)")
+    lang_counts = collections.Counter(d.metadata.get("language", "generic") for d in docs)
+    lang_summary = ", ".join(f"{lang}: {cnt}" for lang, cnt in lang_counts.most_common(5))
+
+    console.print(f"  📦 Extracted [green]{len(docs)}[/green] code unit(s) ({lang_summary})")
 
     from rich.progress import track
-    console.print("\n[bold cyan]Embedding and storing chunks using LlamaIndex…[/bold cyan]")
+    console.print("\n[bold cyan]Embedding and storing chunks into ChromaDB…[/bold cyan]")
     index = get_index()
     for doc in track(docs, description="Embedding code...", console=console):
         index.insert(doc)
