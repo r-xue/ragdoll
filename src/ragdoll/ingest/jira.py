@@ -312,15 +312,36 @@ def ingest_jira(
     fetch_chunk_size = 50
 
     try:
-        from rich.progress import track
-        chunk_ranges = range(0, len(keys_to_fetch), fetch_chunk_size)
-        for i in track(chunk_ranges, description="Downloading full issue data…"):
-            chunk_keys = keys_to_fetch[i: i + fetch_chunk_size]
-            jql_chunk = f"key in ({', '.join(chunk_keys)})"
-            full_batch = reader.jira.search_issues(jql_chunk, maxResults=len(chunk_keys))
-            for issue in full_batch:
-                doc = _build_jira_document(issue, server_tag=server_tag)
-                documents.append(doc)
+        from rich.progress import (
+            Progress,
+            TextColumn,
+            BarColumn,
+            TaskProgressColumn,
+            MofNCompleteColumn,
+            TimeRemainingColumn,
+        )
+        from rich.console import Console
+
+        console = Console()
+        chunk_ranges = list(range(0, len(keys_to_fetch), fetch_chunk_size))
+        with Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=35),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            task = progress.add_task("Downloading full issue data...", total=len(chunk_ranges))
+            for i in chunk_ranges:
+                chunk_keys = keys_to_fetch[i: i + fetch_chunk_size]
+                jql_chunk = f"key in ({', '.join(chunk_keys)})"
+                full_batch = reader.jira.search_issues(jql_chunk, maxResults=len(chunk_keys))
+                for issue in full_batch:
+                    doc = _build_jira_document(issue, server_tag=server_tag)
+                    documents.append(doc)
+                progress.advance(task)
 
     except Exception as e:
         logger.error("Failed during full issue data fetch: %s", e)
@@ -333,12 +354,34 @@ def ingest_jira(
     # ── Phase 3: Batched Vector Store Insertion ──────────────────────────────
     logger.info("Phase 3: Embedding and indexing %d JIRA documents into vector DB...", len(documents))
 
-    from rich.progress import track
+    from rich.progress import (
+        Progress,
+        TextColumn,
+        BarColumn,
+        TaskProgressColumn,
+        MofNCompleteColumn,
+        TimeRemainingColumn,
+    )
+    from rich.console import Console
+
+    console = Console()
     index = get_index()
     batch_embed_size = 64
-    for i in track(range(0, len(documents), batch_embed_size), description="Embedding JIRA issues..."):
-        batch_docs = documents[i: i + batch_embed_size]
-        index.insert_nodes(batch_docs)
+    batch_ranges = list(range(0, len(documents), batch_embed_size))
+    with Progress(
+        TextColumn("[bold cyan]{task.description}"),
+        BarColumn(bar_width=35),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("Embedding JIRA issues...", total=len(documents))
+        for i in batch_ranges:
+            batch_docs = documents[i: i + batch_embed_size]
+            index.insert_nodes(batch_docs)
+            progress.advance(task, advance=len(batch_docs))
 
     logger.info("Successfully ingested %d JIRA issues into vector DB.", len(documents))
     return len(documents)

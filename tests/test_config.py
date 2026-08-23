@@ -81,3 +81,16 @@ def test_github_server_repos_and_default_owner():
 
     all_repos = s.get_all_github_repos()
     assert all_repos == ["myorg/repo1", "myorg/repo2", "internal/service"]
+
+
+def test_chroma_settings():
+    s = Settings(
+        chroma_host="http://chroma.internal",
+        chroma_port=8080,
+        chroma_ssl=True,
+        chroma_auth_token="secret-token",
+    )
+    assert s.chroma_host == "http://chroma.internal"
+    assert s.chroma_port == 8080
+    assert s.chroma_ssl is True
+    assert s.chroma_auth_token == "secret-token"

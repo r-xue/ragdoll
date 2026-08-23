@@ -189,6 +189,12 @@ class Settings(BaseSettings):
     # ── Storage ────────────────────────────────────────────────────────
     data_dir: Path = Path.home() / ".ragdoll" / "data"
     collection_name: str = "ragdoll"
+    chroma_host: str | None = None  # e.g., "http://chroma.internal" or "localhost" for remote server
+    chroma_port: int = 8000
+    chroma_ssl: bool = False
+    chroma_auth_token: str | None = None
+    chroma_tenant: str = "default_tenant"
+    chroma_database: str = "default_database"
 
     # ── Chunking ───────────────────────────────────────────────────────
     chunk_size: int = 1000  # characters per chunk

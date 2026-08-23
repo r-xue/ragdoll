@@ -86,7 +86,7 @@ top_k = 5
 In local RAG systems, tuning `top_k` balances **context coverage** against **GPU prefill latency and answer precision**:
 
 | Setting | Estimated Tokens | Prefill Time (RTX 3090) | Recommended Use Case |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **`top_k = 5`** *(Default)* | ~2,000–3,500 tokens | **< 1.0s** | **Interactive Chat (`ragdoll chat`)**: Fast, snappy streaming with high precision. |
 | **`top_k = 10`** | ~4,000–7,000 tokens | **1.0–2.5s** | **Summarization (`ragdoll summarize`) & Search**: Broader cross-document synthesis. |
 | **`top_k = 20`** | ~10,000–25,000 tokens | **5.0–15.0s** | **Deep Archival Audits**: Exhaustive coverage across large multi-year ticket histories. |
@@ -100,6 +100,7 @@ pixi run ragdoll search "memory allocation in buffer" -n 10
 # Fast conversational chat with top 3 chunks
 pixi run ragdoll chat -n 3
 ```
+
 ```
 
 ## Switching Models (Chat vs. Embedding)
@@ -147,7 +148,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### 1. Embedding Models
 
 | Model | Size | Dimensions | Context | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **`bge-m3`** | 1.2 GB | 1024 | 8k | Default recommendation for technical docs, code, and Jira tickets. |
 | **`qwen3-embedding:4b`** | ~2.5 GB | 2048 | 32k | High-capacity embeddings for large codebases and long documents. |
 | **`qwen3-embedding:0.6b`** | ~0.6 GB | 1024 | 8k | Compact 1024-dim model for memory-constrained setups. |
@@ -156,7 +157,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### 2. Recommended Chat Models by Hardware Profile
 
 | Hardware Profile (Representative Environments) | Usable Memory | Fast / Low Latency | Reasoning & Code |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Dedicated GPU Desktop / Workstation** *(e.g. RTX 3090 / 4090, 24 GB)* | 24 GB dedicated | `gemma4:12b` (~85 tok/s) | `qwen3.8` (27B, ~32 tok/s) |
 | **Mainstream Apple Silicon Mac** *(e.g. M2 / M3 Pro, 32 GB)* | ~24 GB Metal | `gemma4:12b` (~40 tok/s) | `qwen3.8` (27B, ~16 tok/s) |
 | **High-Memory Apple Silicon Mac** *(e.g. M4 Pro / Max, 48 GB)* | ~36 GB Metal | `gemma4:26b` (MoE, ~55 tok/s) | `gemma4:31b` or `qwen3.8` |
@@ -171,7 +172,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### JIRA
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
+| ----- | ------ | --------- | ------------- |
 | `jira_url` | `str` | `"https://jira.example.com"` | JIRA server URL |
 | `jira_user` | `str` | `""` | JIRA username |
 | `jira_token` | `str` | `""` | API token or Personal Access Token |
@@ -181,7 +182,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### GitHub
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
+| ----- | ------ | --------- | ------------- |
 | `github_url` | `str` | `"https://api.github.com"` | GitHub REST API endpoint |
 | `github_token` | `str` | `""` | GitHub Personal Access Token (PAT) |
 | `github_default_owner` | `str` | `""` | Default organization or owner for unqualified repo names in chat |
@@ -189,7 +190,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### Ollama / LLM
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
+| ----- | ------ | --------- | ------------- |
 | `ollama_host` | `str` | `"http://localhost:11434"` | Ollama API endpoint |
 | `embed_model` | `str` | `"nomic-embed-text"` | Model for computing embeddings |
 | `chat_model` | `str` | `"gpt-oss:20b"` | Model for generation and chat |
@@ -198,9 +199,13 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### Storage
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for all persistent data (ChromaDB vector store, metadata cache). ChromaDB is stored at `{data_dir}/chroma/` |
+| ----- | ------ | --------- | ------------- |
+| `data_dir` | `Path` | `~/.ragdoll/data` | Root directory for local persistent data. ChromaDB is stored at `{data_dir}/chroma/` (used when `chroma_host` is not set) |
 | `collection_name` | `str` | `"ragdoll"` | ChromaDB collection name |
+| `chroma_host` | `str` | `None` | Remote ChromaDB server hostname or URL (e.g. `"http://chroma.internal"`). Enables Client-Server mode |
+| `chroma_port` | `int` | `8000` | Remote ChromaDB server port |
+| `chroma_ssl` | `bool` | `False` | Whether to use SSL/HTTPS when connecting to remote ChromaDB |
+| `chroma_auth_token` | `str` | `None` | Optional Bearer authentication token for secured remote ChromaDB instances |
 
 ```{tip}
 **When to customize `data_dir`:**
@@ -215,7 +220,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 ### Chunking & Retrieval
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
+| ----- | ------ | --------- | ------------- |
 | `chunk_size` | `int` | `1000` | Max characters per chunk |
 | `chunk_overlap` | `int` | `200` | Overlap between consecutive chunks |
 | `top_k` | `int` | `5` | Default number of chunks to retrieve |
@@ -241,10 +246,10 @@ token = "ghp_ENTERPRISE_TOKEN"
 repos = ["internal-org/service", "internal-org/deploy-tools"]
 ```
 
-#### Grounding & Disambiguation:
+#### Grounding & Disambiguation
+
 * **Repository Grounding**: When you ask *"Show open PRs in repo1"*, Ragdoll automatically resolves `myorg/repo1` from your known repos list and routes directly to the `public` server.
 * **Default Owner**: If you ask about an unlisted repository without specifying an owner, Ragdoll applies `github_default_owner` automatically.
-
 
 ## JIRA Authentication
 
@@ -290,10 +295,10 @@ auth_method = "pat"
 projects = ["EXTERNAL", "INTEG"]
 ```
 
-#### How Smart Routing Works:
+#### How Smart Routing Works
+
 1. **Targeted Routing (Zero Probing)**: When a chat query specifies a project (e.g. *"Show bugs in CORE"*), Ragdoll parses `project = CORE` from the generated JQL and routes the request **only to the matching server** (`primary`). It will completely skip querying `partner`.
 2. **Probing Fallback**: If a server does not define a `projects` list (or if the query is a general cross-project search), Ragdoll queries all available servers. Missing-project errors on non-hosting servers are caught silently without polluting your chat terminal.
-
 
 ### Ingestion from Additional Sites via CLI
 
@@ -331,6 +336,32 @@ You can also use environment variables for scripting multi-site ingestion:
     pixi run ragdoll ingest jira --jql "project = EXT"
 ```
 
+### Remote ChromaDB Server Configuration (Team Collaboration)
+
+To connect Ragdoll to a centralized, shared ChromaDB server (eliminating local data duplication and enabling team-wide instant updates):
+
+```toml
+# ~/.ragdoll/config.toml (Client Configuration)
+chroma_host = "http://ragdoll-server.internal"
+chroma_port = 8000
+chroma_auth_token = "OPTIONAL_BEARER_TOKEN"  # optional token authentication
+```
+
+#### Starting the Central ChromaDB Server
+
+You can launch a standalone ChromaDB HTTP server using the built-in CLI command:
+
+```bash
+# Start ChromaDB vector server on host 0.0.0.0:8000
+pixi run ragdoll serve-chroma --host 0.0.0.0 --port 8000
+
+# Or specify a custom storage directory
+pixi run ragdoll serve-chroma --host 0.0.0.0 --port 8000 --path /secure/shared/chroma_db
+```
+
+```{seealso}
+For a detailed architectural breakdown of how GPU, CPU, memory, and network loads are split between client workstations and the remote ChromaDB server, see [Deployment Topologies & Workload Distribution](architecture.md#deployment-topologies--workload-distribution) in the Architecture guide.
+```
 
 ## Security, Privacy & Storage Considerations
 
@@ -339,8 +370,9 @@ Ragdoll persists all document chunk embeddings and metadata in a local [ChromaDB
 ### Plaintext Storage in ChromaDB
 
 By design, ChromaDB couples an HNSW vector index with an embedded SQLite database (`chroma.sqlite3`). The SQLite database stores:
-- **Full raw document chunks in plaintext** (parsed source code, Jira ticket discussions, PR reviews, PDF text).
-- **All accompanying metadata** (file paths, author usernames, repository names, timestamps).
+
+* **Full raw document chunks in plaintext** (parsed source code, Jira ticket discussions, PR reviews, PDF text).
+* **All accompanying metadata** (file paths, author usernames, repository names, timestamps).
 
 ```{warning}
 **Never commit or publicly share raw ChromaDB storage directories (`~/.ragdoll/data/` or `chroma.sqlite3`)!**
@@ -350,10 +382,12 @@ Anyone with access to the `chroma.sqlite3` database file can open it with standa
 
 ### Team Collaboration & Sharing Best Practices
 
-- **Share Ingestion Recipes, Not Raw Databases**: Distribute project configuration (`ragdoll.toml`) and ingestion scripts (`scripts/examples.sh`) so each team member builds their own local vector database from sources they are already authorized to access.
-- **Restrict File Permissions**:
+* **Share Ingestion Recipes, Not Raw Databases**: Distribute project configuration (`ragdoll.toml`) and ingestion scripts (`scripts/examples.sh`) so each team member builds their own local vector database from sources they are already authorized to access.
+* **Restrict File Permissions**:
+
   ```bash
   chmod 700 ~/.ragdoll
   chmod 600 ~/.ragdoll/config.toml
   ```
-- **Git Exclusion**: Verify that `.sqlite3`, `.ragdoll/`, and local data directories are always excluded in `.gitignore`.
+
+* **Git Exclusion**: Verify that `.sqlite3`, `.ragdoll/`, and local data directories are always excluded in `.gitignore`.
