@@ -251,7 +251,7 @@ token = "ghp_ENTERPRISE_TOKEN"
 Then specify the server during ingestion:
 
 ```bash
-pixi run ragdoll ingest github --server enterprise --owner myorg --repo internal-service --state all
+pixi run ragdoll ingest github --server enterprise myorg internal-service --state all
 ```
 
 ### Extracted Metadata
@@ -366,8 +366,8 @@ pixi run ragdoll ingest git /path/to/local/repo --max-commits 5000
 All query commands support `--source` to filter retrieved chunks:
 
 ```bash
-pixi run ragdoll search "tclean" --source jira
-pixi run ragdoll summarize "calibration" --source pdf
+pixi run ragdoll search "memory allocation" --source jira
+pixi run ragdoll summarize "database migration" --source pdf
 pixi run ragdoll chat --source code
 pixi run ragdoll search "bugfix" --source git
 pixi run ragdoll search "feature request" --source github

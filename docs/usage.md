@@ -2,27 +2,27 @@
 
 ```bash
 # Basic semantic search
-pixi run ragdoll search "tclean performance regression"
+pixi run ragdoll search "memory allocation regression"
 
 # Filter by source
 pixi run ragdoll search "embedding function" --source code
 pixi run ragdoll search "memory allocation" --source pdf
 
 # Control result count (`top_k`)
-pixi run ragdoll search "bandpass flagging" -n 5
+pixi run ragdoll search "database connection retry" -n 5
 ```
 
 Results are displayed in a table with source ID, similarity score, and text preview.
 
 ```{note}
-The `-n` flag controls the **`top_k`** retrieval parameter. This dictates how many chunks of text the vector database returns to you. Higher values give the LLM more context but can crowd the prompt context window, while lower values are faster but might miss necessary details. The default is configured to `20`.
+The `-n` flag controls the **`top_k`** retrieval parameter. This dictates how many chunks of text the vector database returns to you. Higher values give the LLM more context but can crowd the prompt context window, while lower values are faster but might miss necessary details. The default is configured to `5`.
 ```
 
 ## Summarizing
 
 ```bash
-pixi run ragdoll summarize "What are the known issues with imaging?"
-pixi run ragdoll summarize "tclean parallelization" --source jira
+pixi run ragdoll summarize "What are the known issues with worker scaling?"
+pixi run ragdoll summarize "task queue parallelization" --source jira
 ```
 
 Summarization retrieves relevant chunks, injects them as context, and asks the

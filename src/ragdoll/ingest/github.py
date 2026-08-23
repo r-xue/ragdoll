@@ -3,12 +3,17 @@
 import logging
 from datetime import datetime
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from llama_index.core import Document
 from ragdoll.config import settings
 from ragdoll.store.vectordb import get_index
 
 logger = logging.getLogger(__name__)
+
+# Suppress internal urllib3 retry warnings
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 
 def ingest_github(
@@ -18,7 +23,7 @@ def ingest_github(
     server: str | None = None,
     override_url: str | None = None,
     override_token: str | None = None,
-) -> int:
+) -> tuple[int, int, int]:
     """Ingest GitHub Issues and PRs into the vector database.
 
     Args:
@@ -28,7 +33,7 @@ def ingest_github(
         server (str | None): Name of the github server config to use.
 
     Returns:
-        int: Number of documents upserted.
+        tuple[int, int, int]: (total_documents, issue_count, pr_count).
     """
     cfg = settings.get_github_config(server)
 
@@ -41,6 +46,7 @@ def ingest_github(
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        "Connection": "keep-alive",
     }
     if cfg_token:
         headers["Authorization"] = f"Bearer {cfg_token}"
@@ -50,22 +56,21 @@ def ingest_github(
     issues_endpoint = f"{cfg_url}/repos/{owner}/{repo}/issues"
 
     documents = []
+    issue_count = 0
+    pr_count = 0
 
-    # GitHub pagination uses page numbers and per_page
     params = {"state": state, "per_page": 100, "page": 1}
-
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
 
     with requests.Session() as session:
         retries = Retry(
             total=5,
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET"]
+            allowed_methods=["GET"],
         )
-        session.mount("http://", HTTPAdapter(max_retries=retries))
-        session.mount("https://", HTTPAdapter(max_retries=retries))
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retries)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
         session.headers.update(headers)
 
         while True:
@@ -74,14 +79,24 @@ def ingest_github(
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
-                logger.error("Failed to fetch Issues/PRs: %s", e)
+                logger.error("Failed to fetch Issues/PRs from GitHub: %s", e)
                 break
 
             if not data:
-                break  # No more results
+                break
+
+            batch_issues = 0
+            batch_prs = 0
 
             for issue in data:
                 issue_number = issue.get("number")
+                is_pr = "pull_request" in issue
+                if is_pr:
+                    pr_count += 1
+                    batch_prs += 1
+                else:
+                    issue_count += 1
+                    batch_issues += 1
 
                 # Fetch comments for this issue/PR
                 comments_endpoint = issue.get("comments_url")
@@ -89,14 +104,22 @@ def ingest_github(
                 if comments_endpoint and issue.get("comments", 0) > 0:
                     try:
                         c_resp = session.get(comments_endpoint, timeout=10)
-                        c_resp.raise_for_status()
-                        comments = c_resp.json()
+                        if c_resp.status_code == 200:
+                            comments = c_resp.json()
                     except Exception as e:
-                        logger.warning("Failed to fetch comments for issue %s: %s", issue_number, e)
-                        comments = []
+                        logger.debug("Failed to fetch comments for issue %s: %s", issue_number, e)
 
                 doc = _build_github_document(issue, comments, owner, repo)
                 documents.append(doc)
+
+            logger.info(
+                "Fetched page %d with %d item(s) (%d issue(s), %d PR(s); total so far: %d)...",
+                params["page"],
+                len(data),
+                batch_issues,
+                batch_prs,
+                len(documents),
+            )
 
             # Check for Link header to see if there is a next page
             if "next" in resp.links:
@@ -105,11 +128,18 @@ def ingest_github(
                 break
 
     if not documents:
-        return 0
+        logger.warning("No Issues or PRs found for %s/%s.", owner, repo)
+        return (0, 0, 0)
 
+    logger.info(
+        "Indexing %d GitHub document(s) (%d Issues, %d Pull Requests) into ChromaDB...",
+        len(documents),
+        issue_count,
+        pr_count,
+    )
     index = get_index()
     index.insert_nodes(documents)
-    return len(documents)
+    return (len(documents), issue_count, pr_count)
 
 
 def _build_github_document(issue: dict, comments: list, owner: str, repo: str) -> Document:
@@ -143,7 +173,7 @@ def _build_github_document(issue: dict, comments: list, owner: str, repo: str) -
         f"Created: {created_date}",
         f"\nDescription:",
         body or "(No description provided.)",
-        "\n--- Comments & Activity ---"
+        "\n--- Comments & Activity ---",
     ]
 
     for comment in comments:
