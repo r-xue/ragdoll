@@ -3,12 +3,17 @@
 import logging
 from datetime import datetime
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from llama_index.core import Document
 from ragdoll.config import settings
 from ragdoll.store.vectordb import get_index
 
 logger = logging.getLogger(__name__)
+
+# Suppress noisy internal urllib3 retry warnings for transient connection resets
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 
 def ingest_bitbucket(
@@ -33,7 +38,7 @@ def ingest_bitbucket(
         int: Number of documents upserted.
     """
     cfg = settings.get_bitbucket_config(server)
-    
+
     cfg_url = override_url or cfg["url"]
     cfg_user = override_user or cfg["user"]
     cfg_token = override_token or cfg["token"]
@@ -46,7 +51,10 @@ def ingest_bitbucket(
     if cfg_url.endswith("/"):
         cfg_url = cfg_url[:-1]
 
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "Connection": "keep-alive",
+    }
     if cfg_auth == "pat":
         headers["Authorization"] = f"Bearer {cfg_token}"
     elif cfg_auth == "basic" and cfg_user:
@@ -60,58 +68,63 @@ def ingest_bitbucket(
     logger.info("Fetching Bitbucket PRs from %s for %s/%s (State: %s)", cfg_url, project, repo, state)
 
     prs_endpoint = f"{cfg_url}/rest/api/1.0/projects/{project}/repos/{repo}/pull-requests"
-    
+
     documents = []
-    
+
     params = {"state": state, "limit": 100, "start": 0}
     is_last_page = False
-    
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
 
     with requests.Session() as session:
         retries = Retry(
             total=5,
             backoff_factor=1,
-            status_forcelist=[ 429, 500, 502, 503, 504 ],
-            allowed_methods=["GET"]
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"],
         )
-        session.mount("http://", HTTPAdapter(max_retries=retries))
-        session.mount("https://", HTTPAdapter(max_retries=retries))
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retries)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
         session.headers.update(headers)
-        
+
+        page_count = 0
         while not is_last_page:
             try:
                 resp = session.get(prs_endpoint, params=params, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
-                logger.error("Failed to fetch PRs: %s", e)
+                logger.error("Failed to fetch PRs from Bitbucket: %s", e)
                 break
-                
-            for pr in data.get("values", []):
+
+            pr_batch = data.get("values", [])
+            for pr in pr_batch:
                 pr_id = pr.get("id")
-                
-                # Fetch activities for this PR to get comments
+
+                # Fetch activities for this PR to get review comments
                 activities_endpoint = f"{prs_endpoint}/{pr_id}/activities"
+                activities = []
                 try:
                     act_resp = session.get(activities_endpoint, timeout=10)
-                    act_resp.raise_for_status()
-                    activities = act_resp.json().get("values", [])
+                    if act_resp.status_code == 200:
+                        activities = act_resp.json().get("values", [])
                 except Exception as e:
-                    logger.warning("Failed to fetch activities for PR %s: %s", pr_id, e)
-                    activities = []
-                    
+                    logger.debug("Failed to fetch activities for PR %s: %s", pr_id, e)
+
                 doc = _build_pr_document(pr, activities, project, repo)
                 documents.append(doc)
-                
+
+            page_count += 1
+            logger.info("Fetched batch of %d PR(s) (total so far: %d)...", len(pr_batch), len(documents))
+
             is_last_page = data.get("isLastPage", True)
             if not is_last_page:
                 params["start"] = data.get("nextPageStart")
-                
+
     if not documents:
+        logger.warning("No PRs found for %s/%s.", project, repo)
         return 0
-        
+
+    logger.info("Indexing %d Bitbucket PR document(s) into ChromaDB...", len(documents))
     index = get_index()
     index.insert_nodes(documents)
     return len(documents)
@@ -125,11 +138,11 @@ def _build_pr_document(pr: dict, activities: list, project: str, repo: str) -> D
     state = pr.get("state", "UNKNOWN")
     author_dict = pr.get("author", {}).get("user", {})
     author_name = author_dict.get("displayName") or author_dict.get("name") or "Unknown"
-    
+
     created_ts = pr.get("createdDate", 0) / 1000
     updated_ts = pr.get("updatedDate", 0) / 1000
     created_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M")
-    
+
     # Build main text body
     text_blocks = [
         f"Title: [PR-{pr_id}] {title}",
@@ -138,9 +151,9 @@ def _build_pr_document(pr: dict, activities: list, project: str, repo: str) -> D
         f"Created: {created_date}",
         "\nDescription:",
         description or "(No description provided.)",
-        "\n--- Comments & Activity ---"
+        "\n--- Comments & Activity ---",
     ]
-    
+
     for act in activities:
         action = act.get("action")
         if action == "COMMENTED":
@@ -155,9 +168,9 @@ def _build_pr_document(pr: dict, activities: list, project: str, repo: str) -> D
             a_ts = act.get("createdDate", 0) / 1000
             a_date = datetime.fromtimestamp(a_ts).strftime("%Y-%m-%d")
             text_blocks.append(f"*** [{u_name} - {a_date}] {action} the pull request ***")
-            
+
     text = "\n".join(text_blocks)
-    
+
     # Build metadata
     metadata = {
         "source": "bitbucket",
@@ -170,9 +183,9 @@ def _build_pr_document(pr: dict, activities: list, project: str, repo: str) -> D
         "created_at_ts": created_ts,
         "updated_at_ts": updated_ts,
     }
-    
+
     # For LlamaIndex we map Document kwargs
     doc = Document(text=text, metadata=metadata)
     doc.id_ = f"bitbucket-{project}-{repo}-{pr_id}"
-    
+
     return doc
