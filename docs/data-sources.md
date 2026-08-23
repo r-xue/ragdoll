@@ -354,10 +354,19 @@ Using standard git CLI commands, it extracts each commit into a `Document` conta
 Because it uses `--all`, it automatically covers the entire repository graph, regardless of which branch is currently checked out on your filesystem.
 ```
 
+### Incremental Ingestion & Change Detection
+
+Ragdoll assigns a deterministic ID to each commit based on its SHA-1 hash (`git-{repo_name}-{commit_hash}`). On repeated invocations:
+- **Existing commits** already in ChromaDB are skipped in milliseconds, eliminating redundant Ollama embedding compute.
+- **New commits** added since the last run are embedded and upserted.
+- Use `-f` / `--force` to force re-indexing of all matching commits.
+
 ### Extracted Metadata
 
 | Metadata Key | Type | Description |
 |---|---|---|
+| `source` | `str` | `"git"` |
+| `repo_name` | `str` | Repository folder name |
 | `repo_path` | `str` | Absolute path to the local repository |
 | `commit_hash` | `str` | SHA-1 commit hash |
 | `parents` | `str` | Space-separated parent hashes |
@@ -369,11 +378,20 @@ Because it uses `--all`, it automatically covers the entire repository graph, re
 ### Example
 
 ```bash
-# Ingest the last 1000 commits from a local repo
+# Ingest the 2,000 most recent commits across all branches (default)
 pixi run ragdoll ingest git /path/to/local/repo
 
-# Ingest up to 5000 commits
-pixi run ragdoll ingest git /path/to/local/repo --max-commits 5000
+# Ingest full repository history (all commits from root to HEAD)
+pixi run ragdoll ingest git /path/to/local/repo --all
+
+# Or pass 0 for unlimited commits
+pixi run ragdoll ingest git /path/to/local/repo --max-commits 0
+
+# Exclude merge commits for high-signal direct changes
+pixi run ragdoll ingest git /path/to/local/repo --no-merges
+
+# Force re-indexing of all matching commits
+pixi run ragdoll ingest git /path/to/local/repo --force
 ```
 
 ## Source Filtering

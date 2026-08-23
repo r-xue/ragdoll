@@ -139,14 +139,23 @@ For the full matrix of all supported file extensions, parsing mechanisms, and me
 ## Git Repository History
 
 ```bash
-# Ingest the last 1000 commits from a local git repository
+# Ingest the 2,000 most recent commits across all branches (default)
 pixi run ragdoll ingest git /path/to/local/repo
 
-# Ingest up to 5000 commits
+# Ingest full repository history (all commits from initial root to HEAD)
+pixi run ragdoll ingest git /path/to/local/repo --all
+
+# Or specify custom limit (0 for unlimited full history)
 pixi run ragdoll ingest git /path/to/local/repo --max-commits 5000
+
+# Exclude merge commits for high-signal direct code changes
+pixi run ragdoll ingest git /path/to/local/repo --no-merges
+
+# Force re-indexing of all matching commits
+pixi run ragdoll ingest git /path/to/local/repo --force
 ```
 
-Git ingestion extracts commit hashes, parents, branch/tag references, authors, dates, subject lines, and commit bodies across the entire repository graph.
+Git ingestion extracts commit hashes, parents, branch/tag references, authors, dates, subject lines, and commit bodies across the entire repository graph. Ragdoll tracks commit hashes in ChromaDB and automatically skips already-indexed commits on subsequent runs.
 
 ## Chunking Options
 
