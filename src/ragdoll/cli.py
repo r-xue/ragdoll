@@ -76,11 +76,8 @@ def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: in
         console.print("[red]Error:[/red] Provide at least one PDF file or directory.")
         raise SystemExit(1)
 
-    with console.status("[bold cyan]Extracting, chunking, and embedding PDFs using LlamaIndex…"):
-        # We only take the first path for simplicity with SimpleDirectoryReader in this refactor,
-        # or we could loop over paths. Let's just pass the first path since SimpleDirectoryReader
-        # takes a directory.
-        n = ingest_pdfs(paths[0])
+    console.print(f"[bold cyan]Loading and embedding PDFs from {paths[0]}…[/bold cyan]")
+    n = ingest_pdfs(paths[0])
 
     if n == 0:
         console.print("[yellow]No documents extracted.[/yellow]")
@@ -498,6 +495,26 @@ def mcp(transport: str, port: int) -> None:
 
 # ── Status command ─────────────────────────────────────────────────────
 
+@cli.command("serve-chroma")
+@click.option("--host", default="0.0.0.0", help="Host to bind the Chroma server to. Default: 0.0.0.0")
+@click.option("--port", type=int, default=8000, help="Port to run the Chroma server on. Default: 8000")
+@click.option("--path", "data_path", default=None, help="Path to persist ChromaDB data. Defaults to ~/.ragdoll/data/chroma")
+def serve_chroma_cmd(host: str, port: int, data_path: str | None) -> None:
+    """Launch a standalone ChromaDB HTTP vector server for team sharing."""
+    import subprocess
+    storage_path = data_path or str(settings.chroma_dir)
+    Path(storage_path).mkdir(parents=True, exist_ok=True)
+    console.print(f"[bold green]Starting ChromaDB server on {host}:{port}[/bold green]")
+    console.print(f"  📁 Storage Directory: [cyan]{storage_path}[/cyan]")
+    console.print("  Press [bold red]Ctrl+C[/bold red] to stop.\n")
+    try:
+        subprocess.run(["chroma", "run", "--host", host, "--port", str(port), "--path", storage_path], check=True)
+    except KeyboardInterrupt:
+        console.print("\n[dim]ChromaDB server stopped.[/dim]")
+    except FileNotFoundError:
+        console.print("[bold red]Error:[/bold red] 'chroma' CLI not found in PATH.")
+
+
 @cli.command("clear")
 @click.option("-f", "--force", is_flag=True, help="Skip confirmation prompt.")
 def clear_cmd(force: bool) -> None:
@@ -541,6 +558,10 @@ def status() -> None:
     config_table.add_row("Chunk size", str(settings.chunk_size))
     config_table.add_row("Chunk overlap", str(settings.chunk_overlap))
     config_table.add_row("Top-K", str(settings.top_k))
+    if settings.chroma_host:
+        config_table.add_row("ChromaDB mode", f"[green]Remote Server[/green] ({settings.chroma_host}:{settings.chroma_port})")
+    else:
+        config_table.add_row("ChromaDB mode", f"Local Embedded ({settings.chroma_dir})")
     console.print(config_table)
 
     # Vector store info.

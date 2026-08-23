@@ -33,6 +33,10 @@ chroma/
 *.sqlite3-wal
 *.sqlite3-shm
 
+# Local input sources staging
+sources/
+sources/*
+
 # IDE / Editor
 .vscode/
 .idea/

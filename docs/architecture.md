@@ -104,7 +104,7 @@ src/ragdoll/
 Each data source has a dedicated ingestor that produces `Document` objects:
 
 | Source | Module | Output |
-|--------|--------|--------|
+| -------- | -------- | -------- |
 | PDF | `ingest.pdf` | One `Document` per page (PyMuPDF) |
 | JIRA | `ingest.jira` | One `Document` per issue with metadata and comments |
 | Bitbucket | `ingest.bitbucket` | One `Document` per PR with reviews and activity threads |
@@ -128,15 +128,17 @@ Chunks are embedded in batches via Ollama's `/api/embed` endpoint using
 `nomic-embed-text` (768-dimension vectors, 2048-token context).
 
 Input sanitisation:
+
 - Empty texts are replaced with a placeholder
 - Texts exceeding 2000 characters are truncated
 - Failed batches are skipped (logged) rather than crashing the pipeline
 
-### 4. Storage
+### 4. Storage (Local Embedded & Remote Client-Server)
 
-Embeddings are stored in a persistent ChromaDB collection with cosine
-similarity. Each chunk's metadata (source type, file path, JIRA key, etc.)
-is stored alongside the embedding for filtering.
+Embeddings are stored in a ChromaDB collection with cosine similarity (`hnsw:space = "cosine"`). Ragdoll supports two storage topologies:
+
+- **Local Embedded Mode (Default)**: Uses `chromadb.PersistentClient` pointing to SQLite files in `~/.ragdoll/data/chroma/`. Ideal for standalone workstations and offline use.
+- **Remote Client-Server Mode**: Connects via `chromadb.HttpClient` to a centralized ChromaDB microservice (`chroma_host = "http://..."`). Ideal for engineering teams to prevent duplicate GPU embedding computations and share real-time index updates without copying files.
 
 ### 5. Incremental Ingestion & Change Detection
 
@@ -161,10 +163,10 @@ When conversation history is present during multi-turn chat sessions (`pixi run 
 
 When a query is received in interactive chat, it first passes through the **Intent Router**. The router uses the LLM to classify whether the user is asking a general conceptual/knowledge question (requiring offline vector search) or asking for a real-time list/aggregation of items from external databases.
 
-* **Knowledge Queries (`KNOWLEDGE`)**: Routed to the ChromaDB vector database via the `VectorIndexAutoRetriever`.
-* **Jira Live Queries (`JIRA_DATABASE`)**: The LLM dynamically translates natural language into a Jira JQL query. Ragdoll inspects the JQL for project keys and applies **Smart Server Routing** (matching `projects = [...]` in `config.toml`) to query only the hosting Jira instance, formatting tickets with status, type, and priority.
-* **GitHub Live Queries (`GITHUB_DATABASE`)**: The LLM extracts `owner,repo,state,type` using prompt grounding with configured repositories and `github_default_owner`, querying GitHub's `/search/issues` endpoint directly.
-* **Bitbucket Live Queries (`BITBUCKET_DATABASE`)**: The LLM extracts project and repository parameters and queries the Bitbucket REST API for active pull requests.
+- **Knowledge Queries (`KNOWLEDGE`)**: Routed to the ChromaDB vector database via the `VectorIndexAutoRetriever`.
+- **Jira Live Queries (`JIRA_DATABASE`)**: The LLM dynamically translates natural language into a Jira JQL query. Ragdoll inspects the JQL for project keys and applies **Smart Server Routing** (matching `projects = [...]` in `config.toml`) to query only the hosting Jira instance, formatting tickets with status, type, and priority.
+- **GitHub Live Queries (`GITHUB_DATABASE`)**: The LLM extracts `owner,repo,state,type` using prompt grounding with configured repositories and `github_default_owner`, querying GitHub's `/search/issues` endpoint directly.
+- **Bitbucket Live Queries (`BITBUCKET_DATABASE`)**: The LLM extracts project and repository parameters and queries the Bitbucket REST API for active pull requests.
 
 ### 3. Retrieval (Knowledge Queries)
 
@@ -182,6 +184,78 @@ Retrieved chunks are formatted as context and injected into an LLM prompt:
 - **Summarize** — single-turn generation with a summarization prompt
 - **Chat** — multi-turn conversation with accumulated context
 
+## Deployment Topologies & Workload Distribution
+
+Ragdoll is designed with a **decoupled compute architecture** that separates vector search, text embedding, and generative LLM inference. This allows engineering teams to share institutional knowledge seamlessly without requiring dedicated GPUs on the database server.
+
+```{mermaid}
+graph LR
+    subgraph Client ["Client Workstation (Developer Laptop)"]
+        CLI[Ragdoll CLI / Chat UI]
+        LocalLLM[Local Ollama<br/>GPU / Apple Silicon Metal]
+    end
+
+    subgraph Server ["Central Server (Remote Host)"]
+        ChromaSrv[ChromaDB Server<br/>Port 8000]
+        HNSW[(HNSW Vector Index<br/>RAM)]
+        DB[(chroma.sqlite3<br/>NVMe / SSD)]
+    end
+
+    CLI -->|1. Generate 768-dim query vector| LocalLLM
+    CLI -->|2. Send 3 KB vector via HTTP POST| ChromaSrv
+    ChromaSrv -->|3. Cosine distance traversal in RAM| HNSW
+    ChromaSrv -->|4. Read matched text chunks| DB
+    ChromaSrv -->|5. Return Top-K chunks ~5 KB| CLI
+    CLI -->|6. Stream response with context| LocalLLM
+```
+
+### Workload & Resource Allocation Matrix
+
+| Pipeline Component | Execution Location | Primary Hardware Used | Resource Profile |
+| --- | --- | --- | --- |
+| **Vector Storage & Similarity Search** | **Remote Chroma Server** (`chroma_host`) | **CPU + RAM + NVMe** | **Light / CPU-Bound**: ChromaDB uses CPU-based HNSW vector mathematics in RAM. **Requires 0 GPU**. |
+| **Chat / LLM Token Generation** | **Local Laptop** (or custom `ollama_host`) | **GPU / Unified Memory** | **Heavy / VRAM-Bound**: Generates tokens using Apple Silicon Metal or NVIDIA Tensor Cores. |
+| **Query Embedding Calculation** | **Local Laptop** (or custom `ollama_host`) | **GPU / CPU** | **Negligible**: Embeds a single 1-line query in **< 10 ms**. |
+| **Bulk Ingestion Embedding** | **Machine running Ingest command** | **GPU** | **Heavy / GPU-Bound**: Embeds thousands of text chunks in batches during initial indexing. |
+| **Document Parsing & AST Splitting** | **Client Machine** | **CPU + RAM** | **Light / CPU-Bound**: Parses ASTs, Git logs, and PDFs into structured chunks. |
+
+### Supported Deployment Topologies
+
+#### 1. Hybrid Mode (Recommended Team Architecture)
+
+- **Central Server**: Lightweight Linux VM running `pixi run ragdoll serve-chroma` (2–4 vCPUs, 8 GB RAM, standard SSD, **no GPU required**).
+- **Developer Laptops**: Run local Ollama instances (`qwen3.8:27b-mlx`, `gemma4:12b`, etc.) for private, zero-latency local token generation while querying the shared organizational knowledge base.
+
+```toml
+# ~/.ragdoll/config.toml on developer laptop
+ollama_host = "http://localhost:11434"
+chroma_host = "http://ragdoll-server.internal"
+chroma_port = 8000
+```
+
+#### 2. Fully Centralized "Thin Client" Mode
+
+- **Central Multi-GPU Server**: Hosts both the ChromaDB server and high-capacity Ollama instance (`qwen3.8:27b` on dual RTX 3090/4090 or A100).
+- **Developer Laptops**: Perform **zero AI computation**. All inference, embedding, and vector search occur remotely.
+
+```toml
+# ~/.ragdoll/config.toml on developer laptop
+ollama_host = "http://gpu-server.internal:11434"
+chroma_host = "http://gpu-server.internal:8000"
+```
+
+#### 3. Dedicated Ingestion Worker + Read-Only Team Readers
+
+- **Nightly Ingestion Worker**: A dedicated build runner or cron job with GPU access executes daily ingestion scripts (`pixi run ragdoll ingest jira ...`) against the central ChromaDB server.
+- **Team Members**: Only perform read queries (`chat`, `search`), consuming negligible server resources (< 10ms per query) without local indexing overhead.
+
+### Network Bandwidth & Latency Footprint
+
+Because Ragdoll transfers only mathematical vectors and small text chunks over HTTP, network overhead is minimal:
+
+- **Query Payload (Outbound to Server)**: ~3.1 KB (768 32-bit floating-point numbers + metadata).
+- **Search Result (Inbound to Client)**: ~4.5–8.0 KB (Top-5 chunk text strings and metadata dictionaries).
+- **Network Latency Impact**: < 2 ms overhead on standard Gigabit corporate LAN or Wi-Fi.
 
 ## Local Storage Layout
 
