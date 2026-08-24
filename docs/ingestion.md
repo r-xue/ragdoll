@@ -3,6 +3,11 @@
 Ragdoll supports multiple data sources (PDF, JIRA, Bitbucket, GitHub, Git, and Python code). Each ingestion pipeline extracts text,
 chunks it, computes embeddings via Ollama, and stores them in ChromaDB.
 
+```{tip}
+**Looking for automated batch staging?**
+See the **[Local Knowledge Staging & Batch Ingestion](local-staging.md)** guide to organize files inside `sources/` and run `./scripts/ingest.sh` to ingest everything at once.
+```
+
 ## PDF Documents
 
 ```bash
