@@ -105,6 +105,17 @@ SUPPORTED_EXTENSIONS: dict[str, str] = {
     ".yaml": "yaml",
     ".yml": "yaml",
     ".json": "json",
+    # LaTeX & Scientific Documents
+    ".tex": "latex",
+    ".latex": "latex",
+    ".sty": "latex",
+    ".cls": "latex",
+    ".bib": "bibtex",
+    # Markdown & Documentation
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".rst": "rst",
+    ".txt": "text",
 }
 
 SPECIAL_FILENAMES: dict[str, str] = {

@@ -126,6 +126,12 @@ pixi run ragdoll ingest code ./src/ ./include/
 
 # Ingest only specific file types (e.g. C++ and Python)
 pixi run ragdoll ingest code /path/to/repo --ext py,cpp,h,xml
+
+# Ingest LaTeX papers, style files, and bibliography (.tex, .sty, .bib)
+pixi run ragdoll ingest code /path/to/latex_docs
+
+# Ingest Markdown design specifications & documentation
+pixi run ragdoll ingest code sources/markdown
 ```
 
 Ragdoll supports 30+ source code and markup file types (Python, C/C++, CUDA, Fortran, Shell, XML, Mako, CMake, Rust, Go, TypeScript, etc.). Code files are parsed using language-aware extractors (AST, semantic block parsing, routine boundary scanners) to keep functions, classes, and subroutines intact.

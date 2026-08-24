@@ -291,6 +291,8 @@ Rather than blindly splitting source files by arbitrary character counts, Ragdol
 | **Modern Systems** | Rust, Go | `.rs`, `.go` | Context-aware code chunking with syntax metadata. |
 | **Web & Frontend** | JavaScript, TypeScript | `.js`, `.jsx`, `.ts`, `.tsx` | Syntax-aware component and script chunking. |
 | **Database & Config** | SQL, TOML, YAML, JSON | `.sql`, `.toml`, `.yaml`, `.yml`, `.json` | Query and structured configuration chunking. |
+| **LaTeX & Science** | LaTeX, BibTeX | `.tex`, `.latex`, `.sty`, `.cls`, `.bib` | **Document Chunking**: Ingests research papers, scientific formulas, macros, and bibliography citations. |
+| **Documentation & Specs** | Markdown, reStructuredText, Plain Text | `.md`, `.markdown`, `.rst`, `.txt` | **Section & Text Chunking**: Ingests technical notes, RFCs, architecture specs, and design documents. |
 
 ### Small File Handling & Context Headers
 
