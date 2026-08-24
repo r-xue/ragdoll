@@ -185,6 +185,84 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 `gpt-oss:20b` (~13 GB) serves as a balanced general-purpose model with reliable query routing and solid synthesis at ~40–50 tok/s. While it is not highlighted in the table above, it remains a capable out-of-the-box baseline. Developers seeking higher interactive streaming speeds and larger context windows typically prefer `gemma4:12b`, while those requiring deeper technical reasoning and code analysis lean toward `qwen3.8`.
 ```
 
+## Performance & Concurrency Tuning
+
+When performing heavy ingestion tasks while simultaneously running `ragdoll chat`, Ollama can bottleneck or hang if it swaps back and forth between the embedding model (e.g. `nomic-embed-text` or `qwen3-embedding`) and the chat model (e.g. `gpt-oss:20b` or `qwen3.5:9b`).
+
+### 1. Ollama Concurrency & Model Residency
+
+Configure Ollama to keep multiple models in memory and handle parallel requests:
+
+| Environment Variable | Recommended Value | Purpose |
+| :--- | :--- | :--- |
+| `OLLAMA_MAX_LOADED_MODELS` | `2` or `3` | Keeps both chat and embedding models resident in memory without swapping. |
+| `OLLAMA_NUM_PARALLEL` | `2` or `4` | Allows chatting while ingestion is actively embedding chunks in parallel. |
+| `OLLAMA_KEEP_ALIVE` | `-1` | Keeps models warm in memory indefinitely (no idle unload delay). |
+| `OLLAMA_FLASH_ATTENTION` | `1` | Enables Flash Attention to reduce KV-cache memory and accelerate generation. |
+| `OLLAMA_MAX_QUEUE` | `512` | Increases request queue buffer during bulk ingestion. |
+
+#### Applying on macOS (Ollama GUI App)
+macOS GUI apps do not inherit shell configuration (`~/.zshrc`). Set them via `launchctl`:
+```bash
+launchctl setenv OLLAMA_MAX_LOADED_MODELS 3
+launchctl setenv OLLAMA_NUM_PARALLEL 4
+launchctl setenv OLLAMA_KEEP_ALIVE -1
+launchctl setenv OLLAMA_FLASH_ATTENTION 1
+launchctl setenv OLLAMA_MAX_QUEUE 512
+```
+*After running these commands, quit Ollama completely from the menu bar and relaunch it.*
+
+#### Applying on macOS / Linux (Terminal / CLI Server)
+Add to your `~/.zshrc` or `~/.bashrc`:
+```bash
+export OLLAMA_MAX_LOADED_MODELS=3
+export OLLAMA_NUM_PARALLEL=4
+export OLLAMA_KEEP_ALIVE=-1
+export OLLAMA_FLASH_ATTENTION=1
+export OLLAMA_MAX_QUEUE=512
+```
+Then start the server with `ollama serve`.
+
+#### Applying on Linux (systemd Service)
+```bash
+sudo systemctl edit ollama.service
+```
+Add the following block:
+```ini
+[Service]
+Environment="OLLAMA_MAX_LOADED_MODELS=3"
+Environment="OLLAMA_NUM_PARALLEL=4"
+Environment="OLLAMA_KEEP_ALIVE=-1"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_MAX_QUEUE=512"
+```
+Reload and restart:
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+### 2. Apple Silicon Unified Memory Boost (macOS only)
+
+By default, macOS caps the GPU/Metal framework from allocating more than ~75% of total physical RAM. For a Mac dedicated to running local models, you can raise the Metal wired memory ceiling to ~85–90%:
+
+```bash
+# Check current limit:
+sysctl iogpu.wired_mem_limit
+
+# Raise Metal memory limit (~85% of total RAM in MB):
+# 32 GB RAM:
+sudo sysctl iogpu.wired_mem_limit=27648
+# 64 GB RAM:
+sudo sysctl iogpu.wired_mem_limit=57344
+# 128 GB RAM:
+sudo sysctl iogpu.wired_mem_limit=114688
+```
+
+```bash
+# Verify active models in memory:
+ollama ps
+```
+
 ## Settings Reference
 
 ### JIRA

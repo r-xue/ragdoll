@@ -124,9 +124,10 @@ def ingest_pdfs(
         len(files_to_index),
         skipped_count,
     )
-
     if not files_to_index:
         return (0, skipped_count)
+
+    console.print(f"  -> Parsing [bold]{len(files_to_index)}[/bold] new/modified PDF(s) ({skipped_count} up-to-date skipped)...")
 
     # 4. Load and parse only new/updated PDFs
     all_documents = []
@@ -146,26 +147,45 @@ def ingest_pdfs(
                 doc.metadata["mtime_ts"] = mtime
             all_documents.extend(docs)
         except Exception as e:
+            console.print(f"  [yellow]Warning:[/yellow] Failed to load PDF [bold]{pdf_path.name}[/bold]: {e}")
             logger.error("Failed to load PDF %s: %s", pdf_path, e)
 
     if not all_documents:
         return (0, skipped_count)
 
-    # 5. Embed and insert into ChromaDB index with Rich progress bar
-    index = get_index()
-    with Progress(
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=35),
-        TaskProgressColumn(),
-        MofNCompleteColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=False,
-    ) as progress:
-        task = progress.add_task("Embedding PDFs...", total=len(all_documents))
-        for doc in all_documents:
-            index.insert(doc)
-            progress.advance(task)
+    console.print(f"  -> Extracted [green]{len(all_documents)}[/green] page node(s). Computing embeddings via Ollama...")
 
-    logger.info("Successfully ingested %d new/updated PDF chunk(s).", len(all_documents))
-    return (len(all_documents), skipped_count)
+    # 5. Embed and insert into ChromaDB index with Rich progress bar
+    #    GracefulInterrupt defers ^C until the current insert() finishes,
+    #    preventing HNSW index corruption in ChromaDB's Rust backend.
+    from ragdoll.store.safety import GracefulInterrupt
+
+    ingested = 0
+    try:
+        index = get_index()
+        with GracefulInterrupt() as gi, Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=35),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            task = progress.add_task("Embedding PDFs...", total=len(all_documents))
+            for doc in all_documents:
+                index.insert(doc)
+                ingested += 1
+                progress.advance(task)
+                if gi.interrupted:
+                    break
+    except KeyboardInterrupt:
+        console.print(f"  [yellow]Partially ingested {ingested}/{len(all_documents)} PDF chunk(s) before interrupt.[/yellow]")
+        return (ingested, skipped_count)
+    except Exception as e:
+        console.print(f"  [bold red]Embedding Error:[/bold red] {e}")
+        logger.exception("PDF embedding failed: %s", e)
+        raise
+
+    logger.info("Successfully ingested %d new/updated PDF chunk(s).", ingested)
+    return (ingested, skipped_count)

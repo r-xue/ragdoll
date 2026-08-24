@@ -21,6 +21,12 @@ pixi run ragdoll ingest-all /path/to/ragdoll-sources-pipeline
 
 # Automatically clone/update repositories listed in manifests/repos.txt before indexing
 pixi run ragdoll ingest-all --clone
+
+# Force re-indexing of all data sources, bypassing incremental change cache
+pixi run ragdoll ingest-all --force
+
+# Sync repositories and force full re-indexing of everything in one command
+pixi run ragdoll ingest-all --clone --force
 ```
 
 ## Repository Manifest Staging (`stage-repos`)
