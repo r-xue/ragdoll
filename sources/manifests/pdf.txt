@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll PDF Document Manifest
+# List remote PDF documents, whitepapers, and manuals to download into pdf/.
+# Format: <URL> [TARGET_SUBDIR/FILENAME.pdf]
+#
+# Examples:
+# https://example.com/docs/manual-2025.pdf user_guides/manual.pdf
+# https://arxiv.org/pdf/2301.12345.pdf memos/research_paper.pdf
+# ==============================================================================

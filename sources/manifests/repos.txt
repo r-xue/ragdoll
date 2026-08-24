@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll Git Repository Manifest
+# List external Git repositories to clone and index (AST code + Git history).
+# Format: <GIT_URL> [BRANCH] [CUSTOM_DIR]
+#
+# Examples:
+# https://github.com/myorg/web-app.git main web-app
+# https://github.com/myorg/data-service.git
+# ==============================================================================

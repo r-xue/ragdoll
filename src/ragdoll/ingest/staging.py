@@ -1,22 +1,29 @@
-"""Repository staging and multi-source directory ingestion orchestrator.
+"""Multi-source directory and API manifest ingestion orchestrator.
 
-Provides automated cloning/updating of external repositories from manifests
-and recursive multi-source ingestion of PDF documents, Markdown specs,
-and staged Git repositories into ChromaDB.
+Provides automated cloning/updating of external repositories and unified
+batch ingestion of local PDFs, Markdown specs, code ASTs, Git commits,
+Jira tickets, GitHub Issues/PRs, and Bitbucket PRs from declarative manifests.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
+import shlex
 import subprocess
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
+from ragdoll.ingest.bitbucket import ingest_bitbucket
 from ragdoll.ingest.code import ingest_code
 from ragdoll.ingest.git import ingest_git
+from ragdoll.ingest.github import ingest_github
+from ragdoll.ingest.jira import ingest_jira
 from ragdoll.ingest.pdf import ingest_pdfs
 from ragdoll.store.vectordb import get_index
 
@@ -30,6 +37,20 @@ def _get_working_dir() -> Path:
     if init_cwd and Path(init_cwd).is_dir():
         return Path(init_cwd).resolve()
     return Path.cwd().resolve()
+
+
+def _find_manifest(root_dir: Path, filename: str) -> Path | None:
+    """Locate a manifest file inside manifests/ or sources/manifests/."""
+    candidates = [
+        root_dir / "manifests" / filename,
+        root_dir / "sources" / "manifests" / filename,
+        root_dir / filename,
+        root_dir / "sources" / filename,
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c.resolve()
+    return None
 
 
 def stage_repositories(
@@ -61,32 +82,24 @@ def stage_repositories(
         if p.is_file():
             manifest_file = p
         elif p.is_dir():
-            for sub in [p / "repos.txt", p / "repos" / "repos.txt", p / "sources" / "repos" / "repos.txt"]:
-                if sub.is_file():
-                    manifest_file = sub.resolve()
-                    break
+            manifest_file = _find_manifest(p, "repos.txt")
 
     if manifest_file is None:
-        for candidate in [
-            work_dir / "repos" / "repos.txt",
-            work_dir / "sources" / "repos" / "repos.txt",
-            work_dir / "repos.txt",
-            Path("sources/repos/repos.txt").resolve(),
-            Path("repos/repos.txt").resolve(),
-        ]:
-            if candidate.is_file():
-                manifest_file = candidate
-                break
+        manifest_file = _find_manifest(work_dir, "repos.txt")
 
     if manifest_file is None or not manifest_file.is_file():
         raise FileNotFoundError(
-            f"Repository manifest file not found: {manifest_path or 'repos/repos.txt'}. "
-            "Please specify a valid manifest path or create repos/repos.txt."
+            f"Repository manifest file not found: {manifest_path or 'manifests/repos.txt'}. "
+            "Please specify a valid manifest path or create manifests/repos.txt."
         )
 
     # 2. Determine target directory
     if target_dir is None:
-        target_dir_path = manifest_file.parent
+        # Default to a sibling repos/ folder if manifest is inside manifests/
+        if manifest_file.parent.name == "manifests":
+            target_dir_path = manifest_file.parent.parent / "repos"
+        else:
+            target_dir_path = manifest_file.parent
     else:
         target_dir_p = Path(target_dir)
         if not target_dir_p.is_absolute():
@@ -175,18 +188,139 @@ def stage_repositories(
     return results
 
 
+def stage_pdfs(
+    manifest_path: Path | str | None = None,
+    target_dir: Path | str | None = None,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    """Download and sync remote PDF documents declared in a manifest file (e.g. pdf.txt).
+
+    Manifest line format:
+        <URL> [OPTIONAL_SUBPATH_OR_FILENAME]
+
+    Args:
+        manifest_path (Path | str | None): Path to pdf.txt or directory containing manifests/.
+        target_dir (Path | str | None): Destination directory (defaults to sibling pdf/ directory).
+        force (bool): If True, forces re-download even if file exists locally.
+
+    Returns:
+        list[dict[str, Any]]: Download summary records.
+    """
+    work_dir = _get_working_dir()
+
+    # 1. Resolve manifest file
+    manifest_file: Path | None = None
+    if manifest_path is not None:
+        p = Path(manifest_path)
+        if not p.is_absolute():
+            p = (work_dir / p).resolve()
+        if p.is_file():
+            manifest_file = p
+        elif p.is_dir():
+            manifest_file = _find_manifest(p, "pdf.txt")
+
+    if manifest_file is None:
+        manifest_file = _find_manifest(work_dir, "pdf.txt")
+
+    if manifest_file is None or not manifest_file.is_file():
+        raise FileNotFoundError(
+            f"PDF manifest file not found: {manifest_path or 'manifests/pdf.txt'}. "
+            "Please specify a valid manifest path or create manifests/pdf.txt."
+        )
+
+    # 2. Determine target directory
+    if target_dir is None:
+        if manifest_file.parent.name == "manifests":
+            target_dir_path = manifest_file.parent.parent / "pdf"
+        else:
+            target_dir_path = manifest_file.parent
+    else:
+        target_dir_p = Path(target_dir)
+        if not target_dir_p.is_absolute():
+            target_dir_path = (work_dir / target_dir_p).resolve()
+        else:
+            target_dir_path = target_dir_p.resolve()
+
+    target_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info("Staging PDFs from %s into %s", manifest_file, target_dir_path)
+
+    # 3. Read and process manifest lines
+    results: list[dict[str, Any]] = []
+    lines = manifest_file.read_text(encoding="utf-8").splitlines()
+
+    for line in lines:
+        clean = line.strip()
+        if not clean or clean.startswith("#"):
+            continue
+
+        parts = clean.split(maxsplit=1)
+        url = parts[0]
+        custom_subpath = parts[1] if len(parts) > 1 else None
+
+        if custom_subpath:
+            dest = target_dir_path / custom_subpath
+        else:
+            parsed_path = urllib.parse.urlparse(url).path
+            filename = Path(parsed_path).name or "document.pdf"
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+            dest = target_dir_path / filename
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        record: dict[str, Any] = {
+            "url": url,
+            "destination": dest,
+            "status": "Unknown",
+            "error": None,
+        }
+
+        try:
+            if dest.is_file() and dest.stat().st_size > 0 and not force:
+                record["status"] = "Up to date"
+            else:
+                logger.info("Downloading %s -> %s", url, dest)
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Ragdoll-Pipeline/1.0 (Python urllib)"},
+                )
+                part_dest = dest.with_suffix(dest.suffix + ".part")
+                with urllib.request.urlopen(req, timeout=60) as resp, open(part_dest, "wb") as out_f:
+                    while chunk := resp.read(64 * 1024):
+                        out_f.write(chunk)
+                part_dest.replace(dest)
+                record["status"] = "Downloaded"
+        except Exception as e:
+            record["status"] = "Error"
+            record["error"] = str(e)
+            logger.warning("Failed to download %s: %s", url, e)
+
+        results.append(record)
+
+    return results
+
+
 def ingest_all_sources(
     root_path: Path | str = "sources",
     clone_first: bool = False,
+    force: bool = False,
 ) -> dict[str, int]:
-    """Recursively ingest all PDF documents, Markdown specs, and staged code repositories.
+    """Recursively ingest all data sources from physical directories and API manifests.
+
+    Scans for:
+    1. Local PDF documents (pdf/) with incremental SHA-256 caching.
+    2. Local Markdown specifications (markdown/).
+    3. Staged Git repositories (repos/) for code ASTs and commit histories.
+    4. Jira query manifests (manifests/jira.txt).
+    5. GitHub repository manifests (manifests/github.txt).
+    6. Bitbucket repository manifests (manifests/bitbucket.txt).
 
     Args:
         root_path (Path | str): Root directory to inspect (e.g. 'sources/' or '/path/to/ragdoll-sources-pipeline').
         clone_first (bool): If True, runs stage_repositories on any found repos.txt before ingesting.
+        force (bool): If True, forces full re-indexing of all data sources.
 
     Returns:
-        dict[str, int]: Ingestion summary counts.
+        dict[str, int]: Ingestion summary counts across all source types.
     """
     work_dir = _get_working_dir()
     root_p = Path(root_path)
@@ -201,20 +335,26 @@ def ingest_all_sources(
         "markdown_documents": 0,
         "code_documents": 0,
         "git_commits": 0,
+        "jira_tickets": 0,
+        "github_items": 0,
+        "bitbucket_prs": 0,
     }
 
-    # 1. Optional Repository Staging
+    # 1. Optional Repository & PDF Staging
     if clone_first:
-        manifest_candidates = [
-            root_p / "repos" / "repos.txt",
-            root_p / "sources" / "repos" / "repos.txt",
-            root_p / "repos.txt",
-        ]
-        for mc in manifest_candidates:
-            if mc.is_file():
-                logger.info("Executing repository staging from manifest: %s", mc)
-                stage_repositories(manifest_path=mc, target_dir=mc.parent)
-                break
+        repos_manifest = _find_manifest(root_p, "repos.txt")
+        if repos_manifest:
+            logger.info("Executing repository staging from manifest: %s", repos_manifest)
+            target_dir = repos_manifest.parent.parent / "repos" if repos_manifest.parent.name == "manifests" else repos_manifest.parent
+            stage_repositories(manifest_path=repos_manifest, target_dir=target_dir)
+
+        pdf_manifest = _find_manifest(root_p, "pdf.txt")
+        if pdf_manifest:
+            logger.info("Executing PDF download staging from manifest: %s", pdf_manifest)
+            target_pdf_dir = pdf_manifest.parent.parent / "pdf" if pdf_manifest.parent.name == "manifests" else pdf_manifest.parent
+            stage_pdfs(manifest_path=pdf_manifest, target_dir=target_pdf_dir, force=force)
+
+    step = 1
 
     # 2. Ingest PDF Documents
     pdf_candidates = [root_p / "pdf", root_p / "sources" / "pdf", root_p]
@@ -223,13 +363,15 @@ def ingest_all_sources(
         primary_pdf_dir = pdf_dirs[0]
         pdf_files = list(primary_pdf_dir.rglob("*.pdf"))
         if pdf_files:
-            console.print(f"[bold cyan][1/3][/bold cyan] Ingesting {len(pdf_files)} PDF document(s) from [bold]{primary_pdf_dir}[/bold]...")
-            count, skipped = ingest_pdfs(primary_pdf_dir)
+            console.print(
+                f"[bold cyan][{step}][/bold cyan] Ingesting {len(pdf_files)} PDF document(s) from [bold]{primary_pdf_dir}[/bold]...")
+            count, skipped = ingest_pdfs(primary_pdf_dir, force=force)
             if skipped > 0 and count == 0:
-                console.print(f"  ✨ All [green]{skipped}[/green] PDF(s) are already indexed and up-to-date.")
+                console.print(f"  ✨ All [green]{skipped}[/green] PDF(s) are already indexed and up-to-date in ChromaDB.")
             elif skipped > 0:
-                console.print(f"  💾 Stored [green]{count}[/green] new/updated chunks ([dim]{skipped} up-to-date skipped[/dim]).")
+                console.print(f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
             summary["pdf_documents"] = count
+            step += 1
 
     # 3. Ingest Markdown & Documentation Specifications
     md_candidates = [root_p / "markdown", root_p / "sources" / "markdown", root_p / "specs"]
@@ -238,12 +380,14 @@ def ingest_all_sources(
         primary_md_dir = md_dirs[0]
         md_files = [f for f in primary_md_dir.rglob("*") if f.is_file() and f.suffix.lower() in {".md", ".markdown", ".rst", ".txt"}]
         if md_files:
-            console.print(f"[bold cyan][2/3][/bold cyan] Ingesting {len(md_files)} Markdown document(s) from [bold]{primary_md_dir}[/bold]...")
+            console.print(
+                f"[bold cyan][{step}][/bold cyan] Ingesting {len(md_files)} Markdown document(s) from [bold]{primary_md_dir}[/bold]...")
             docs = ingest_code([primary_md_dir], extensions={".md", ".markdown", ".rst", ".txt"})
             if docs:
                 index = get_index()
                 index.insert_nodes(docs)
                 summary["markdown_documents"] = len(docs)
+            step += 1
 
     # 4. Ingest Staged Repositories
     repos_candidates = [root_p / "repos", root_p / "sources" / "repos"]
@@ -252,7 +396,8 @@ def ingest_all_sources(
         primary_repos_dir = repos_dirs[0]
         repo_subdirs = [d for d in primary_repos_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
         if repo_subdirs:
-            console.print(f"[bold cyan][3/3][/bold cyan] Ingesting {len(repo_subdirs)} staged repository(s) from [bold]{primary_repos_dir}[/bold]...")
+            console.print(
+                f"[bold cyan][{step}][/bold cyan] Ingesting {len(repo_subdirs)} staged repository(s) from [bold]{primary_repos_dir}[/bold]...")
             index = get_index()
             for rdir in repo_subdirs:
                 # Ingest code AST
@@ -265,7 +410,86 @@ def ingest_all_sources(
                 # Ingest git history if .git is present
                 if (rdir / ".git").is_dir():
                     console.print(f"  -> Ingesting Git commit history for [bold]{rdir.name}[/bold]...")
-                    commits_count = ingest_git(str(rdir))
-                    summary["git_commits"] += commits_count
+                    new_commits, skipped_commits = ingest_git(str(rdir), force=force)
+                    summary["git_commits"] += new_commits
+            step += 1
+
+    # 5. Ingest Jira Tickets (from manifests/jira.txt)
+    jira_manifest = _find_manifest(root_p, "jira.txt")
+    if jira_manifest:
+        console.print(f"[bold cyan][{step}][/bold cyan] Ingesting Jira tickets declared in [bold]{jira_manifest}[/bold]...")
+        with open(jira_manifest, "r", encoding="utf-8") as f:
+            for line in f:
+                clean = line.strip()
+                if not clean or clean.startswith("#"):
+                    continue
+
+                # Parse: [server] "JQL" or just JQL
+                server = None
+                jql = clean
+                parts = shlex.split(clean)
+                if len(parts) >= 2 and not parts[0].startswith("project"):
+                    server = parts[0]
+                    jql = parts[1]
+                elif len(parts) == 1:
+                    jql = parts[0]
+
+                console.print(f"  -> Fetching Jira issues: [dim]{jql}[/dim] (server: {server or 'default'})...")
+                try:
+                    count = ingest_jira(jql=jql, server=server, force=force)
+                    summary["jira_tickets"] += count
+                except Exception as e:
+                    console.print(f"  [yellow]Warning:[/yellow] Jira ingestion failed for '{jql}': {e}")
+        step += 1
+
+    # 6. Ingest GitHub Issues & PRs (from manifests/github.txt)
+    github_manifest = _find_manifest(root_p, "github.txt")
+    if github_manifest:
+        console.print(f"[bold cyan][{step}][/bold cyan] Ingesting GitHub Issues & PRs declared in [bold]{github_manifest}[/bold]...")
+        with open(github_manifest, "r", encoding="utf-8") as f:
+            for line in f:
+                clean = line.strip()
+                if not clean or clean.startswith("#"):
+                    continue
+
+                parts = clean.split()
+                owner = parts[0]
+                repo = parts[1] if len(parts) > 1 else ""
+                state = parts[2] if len(parts) > 2 else "all"
+                server = parts[3] if len(parts) > 3 else None
+
+                if owner and repo:
+                    console.print(f"  -> Ingesting GitHub [bold]{owner}/{repo}[/bold] (state: {state})...")
+                    try:
+                        total_items, new_chunks, skipped = ingest_github(owner=owner, repo=repo, state=state, server=server)
+                        summary["github_items"] += new_chunks
+                    except Exception as e:
+                        console.print(f"  [yellow]Warning:[/yellow] GitHub ingestion failed for {owner}/{repo}: {e}")
+        step += 1
+
+    # 7. Ingest Bitbucket PRs (from manifests/bitbucket.txt)
+    bitbucket_manifest = _find_manifest(root_p, "bitbucket.txt")
+    if bitbucket_manifest:
+        console.print(f"[bold cyan][{step}][/bold cyan] Ingesting Bitbucket PRs declared in [bold]{bitbucket_manifest}[/bold]...")
+        with open(bitbucket_manifest, "r", encoding="utf-8") as f:
+            for line in f:
+                clean = line.strip()
+                if not clean or clean.startswith("#"):
+                    continue
+
+                parts = clean.split()
+                project = parts[0]
+                repo = parts[1] if len(parts) > 1 else ""
+                state = parts[2] if len(parts) > 2 else "ALL"
+                server = parts[3] if len(parts) > 3 else None
+
+                if project and repo:
+                    console.print(f"  -> Ingesting Bitbucket PRs for [bold]{project}/{repo}[/bold] (state: {state})...")
+                    try:
+                        count = ingest_bitbucket(project=project, repo=repo, state=state, server=server)
+                        summary["bitbucket_prs"] += count
+                    except Exception as e:
+                        console.print(f"  [yellow]Warning:[/yellow] Bitbucket ingestion failed for {project}/{repo}: {e}")
+        step += 1
 
     return summary

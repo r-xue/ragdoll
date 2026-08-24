@@ -2,18 +2,36 @@
 # ==============================================================================
 # Ragdoll CLI Examples & Quick Reference
 # ==============================================================================
+# NOTE: If you are running commands from OUTSIDE the ragdoll codebase directory
+# (such as from an external data sources repository),
+# specify the path to ragdoll using pixi's -m / --manifest-path flag:
+#
+#   pixi run -m /path/to/ragdoll ragdoll <command>
+#   # Or relative path:
+#   pixi run -m ../ragdoll ragdoll ingest-all . --clone
+# ==============================================================================
 
 # ------------------------------------------------------------------------------
 # 0. One-Click Multi-Source Ingestion & Repository Staging
 # ------------------------------------------------------------------------------
-# Stage/clone external repositories declared in manifest:
-# pixi run ragdoll stage-repos sources/repos/repos.txt
-
-# Ingest all staged PDFs, Markdown specs, and repositories in one pass:
+# Ingest all sources in one pass:
+# (Scans local pdf/, markdown/, already-staged repos/, and queries Jira/GitHub/Bitbucket APIs via manifests/)
 # pixi run ragdoll ingest-all sources
 
-# Automatically stage repositories and ingest all sources:
+# Full Sync & Ingestion (Recommended):
+# (1. First runs stage-repos to clone/pull Git repos from manifests/repos.txt into repos/)
+# (2. Then indexes pdf/, markdown/, repos/ code AST + commits, and all live API manifests)
 # pixi run ragdoll ingest-all sources --clone
+
+# Stage/pull Git repositories declared in manifest ONLY (no indexing):
+# pixi run ragdoll stage-repos sources/manifests/repos.txt
+
+# Stage/download remote PDF documents declared in manifest ONLY (no indexing):
+# pixi run ragdoll stage-pdfs sources/manifests/pdf.txt
+
+# Run from an external sources repository (e.g. sibling data workspace):
+# pixi run -m ../ragdoll ragdoll ingest-all . --clone
+# pixi run --manifest-path /path/to/ragdoll ragdoll ingest-all .
 
 # ------------------------------------------------------------------------------
 # 1. Jira Ingestion (Incremental with Smart Server Targeting)
@@ -24,6 +42,9 @@
 
 # Ingest via direct CLI URL/Token override:
 # pixi run ragdoll ingest jira --url https://jira.example.com --token "PAT" --jql "project = BACKEND"
+
+# From external workspace:
+# pixi run -m ../ragdoll ragdoll ingest jira --server primary --jql "project = BACKEND"
 
 # ------------------------------------------------------------------------------
 # 2. GitHub Issues & Pull Requests
@@ -69,6 +90,9 @@
 # Launch interactive chat session:
 # pixi run ragdoll chat
 
+# Chat with customized top_k context chunks:
+# pixi run ragdoll chat -n 5
+
 # Semantic search across all sources:
 # pixi run ragdoll search "memory allocation buffer" --source code
 # pixi run ragdoll search "authentication token refresh" --source pdf
@@ -79,8 +103,11 @@
 # Launch local Gradio Web UI:
 # pixi run ragdoll ui --port 7860
 
-# Launch MCP server over STDIO (Claude Desktop / Cursor):
+# Launch MCP server over STDIO (for Claude Desktop integration)
 # pixi run ragdoll mcp
+
+# Launch MCP server over SSE (HTTP Server-Sent Events)
+# pixi run ragdoll mcp --transport sse --port 8080
 
 # Launch OpenAI-compatible REST API:
 # pixi run ragdoll serve --host 0.0.0.0 --port 8000

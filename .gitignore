@@ -40,8 +40,8 @@ sources/markdown/*
 !sources/markdown/.gitkeep
 sources/repos/*
 !sources/repos/.gitkeep
-!sources/repos/repos.txt
 !sources/README.md
+!sources/manifests/**
 
 # IDE / Editor
 .vscode/

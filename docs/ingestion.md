@@ -19,7 +19,7 @@ pixi run ragdoll ingest-all
 # Or ingest an external sources directory
 pixi run ragdoll ingest-all /path/to/ragdoll-sources-pipeline
 
-# Automatically clone/update repositories listed in repos/repos.txt before indexing
+# Automatically clone/update repositories listed in manifests/repos.txt before indexing
 pixi run ragdoll ingest-all --clone
 ```
 
@@ -28,7 +28,7 @@ pixi run ragdoll ingest-all --clone
 You can declaratively stage and update external Git repositories for code and history ingestion using a `repos.txt` manifest:
 
 ```bash
-# Stage repositories defined in sources/repos/repos.txt (default)
+# Stage repositories defined in sources/manifests/repos.txt (default)
 pixi run ragdoll stage-repos
 
 # Stage repositories from a custom manifest into a specific target folder
@@ -36,6 +36,18 @@ pixi run ragdoll stage-repos /path/to/repos.txt --target-dir /path/to/clones
 
 # Perform fast shallow clones (depth=1)
 pixi run ragdoll stage-repos --depth 1
+```
+
+## PDF Manifest Staging (`stage-pdfs`)
+
+You can declaratively download and sync remote PDF manuals, memos, and whitepapers into `pdf/` using a `pdf.txt` manifest:
+
+```bash
+# Download and sync PDFs defined in sources/manifests/pdf.txt (default)
+pixi run ragdoll stage-pdfs
+
+# Force re-download even if files exist locally
+pixi run ragdoll stage-pdfs --force
 ```
 
 ## PDF Documents (Incremental with Content Hashing)
