@@ -28,6 +28,7 @@ from ragdoll import __version__
 from ragdoll.config import settings
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 # ── Logging setup ──────────────────────────────────────────────────────
 
