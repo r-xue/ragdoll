@@ -1,49 +1,94 @@
 # Knowledge Sources & Staging Area (`sources/`)
 
-This directory is the **local staging area** for dropping documents and declaring manifests to index into Ragdoll.
+This directory serves as the **local staging ground** and declarative specification area for documents, codebases, and external API queries indexed into Ragdoll.
 
 > [!NOTE]
-> All document contents placed inside `pdf/`, `markdown/`, and `repos/` (as well as custom subdirectories) are **excluded from Git** via `.gitignore`. They stay safely and privately on your local workstation.
+> All document contents placed inside `pdf/`, `markdown/`, and `repos/` (as well as custom subdirectories) are **excluded from Git** via `.gitignore`. They remain safely and privately on your local workstation. Only declarative manifests (`manifests/`) are version-controlled.
 
 ---
 
 ## Directory Layout
 
-```
+```text
 sources/
- pdf/              # Place PDF technical memos, reports, manuals, and specs
- markdown/         # Place Markdown specifications, technical notes, and contracts
- repos/            # Local Git repository clones for code and commit analysis
- manifests/        # Declarative API, PDF, and repository manifests
-    ├── repos.txt     # Git repositories to clone and index (AST + Git commits)
-    ├── pdf.txt       # Remote PDF download URLs to sync into pdf/
-    ├── jira.txt      # Jira JQL queries to fetch tickets and comments
-    ├── github.txt    # GitHub repositories to fetch Issues and PR discussions
-    └── bitbucket.txt # Bitbucket repositories to fetch PR reviews and discussions
+ pdf/                      # Local PDF whitepapers, memos, and manuals (.gitignored)
+   ├── memos/                # Technical memos, algorithmic whitepapers, scientific notes
+   ├── architecture/         # System architecture documents, design specifications, RFCs
+   └── user_guides/          # Operations manuals, installation guides, user documentation
+ markdown/                 # Local Markdown specs and design notes (.gitignored)
+   ├── specs/                # Markdown design documents, data schemas, interface contracts
+   └── notes/                # Research notes, technical meeting summaries, scratchpads
+ repos/                    # Local Git repository checkouts (.gitignored)
+ manifests/                # Declarative API, PDF & Repository Manifests (version-controlled)
+    ├── repos.txt             # Git repositories to clone (AST code + Git history)
+    ├── pdf.txt               # Public PDF download URLs to sync into pdf/
+    ├── jira.txt              # Jira JQL queries to fetch tickets & comments
+    ├── github.txt            # GitHub repositories to fetch Issues & PR discussions
+    └── bitbucket.txt         # Bitbucket repositories to fetch PR reviews & discussions
 ```
 
 ---
 
-## Quickstart
+## Quickstart: Staging & Ingestion
 
-1. **Stage your sources**:
-   * Copy `.pdf` files into `sources/pdf/`
-   * Copy `.md` files into `sources/markdown/`
-   * Declare Git repos in `sources/manifests/repos.txt` and run `pixi run ragdoll stage-repos`
-   * Declare remote PDF URLs in `sources/manifests/pdf.txt` and run `pixi run ragdoll stage-pdfs`
-   * Declare API queries in `sources/manifests/jira.txt`, `github.txt`, `bitbucket.txt`
+Ingestion is executed directly via the `ragdoll` CLI.
 
-2. **Run batch ingestion**:
+### 1. Stage Listed Repositories & PDFs (Optional Prep)
+To clone or pull repositories and download declared PDFs into their staging folders:
 
-   ```bash
-   pixi run ragdoll ingest-all
-   ```
+```bash
+# Clone or update external Git repositories declared in manifests/repos.txt:
+pixi run ragdoll stage-repos
 
-3. **Start chatting**:
+# Download remote PDF documents declared in manifests/pdf.txt into pdf/:
+pixi run ragdoll stage-pdfs
+```
 
-   ```bash
-   pixi run ragdoll chat
-   ```
+### 2. One-Click Multi-Source Ingestion
+Ingest all PDF memos, Markdown specifications, staged codebases, and manifest queries in one command:
+
+```bash
+# Ingest all knowledge into your local vector database:
+pixi run ragdoll ingest-all
+
+# Automatically stage/pull repositories, download PDFs, and index everything:
+pixi run ragdoll ingest-all --clone
+
+# Or push directly to a Central Team ChromaDB Server:
+RAGDOLL_CHROMA_HOST=http://ragdoll-server.internal:8000 pixi run ragdoll ingest-all
+```
+
+---
+
+## Contribution Guidelines
+
+### 1. Document Contributions (PDF & Markdown)
+* Place PDFs in `sources/pdf/memos/`, `sources/pdf/architecture/`, or `sources/pdf/user_guides/`.
+* Place Markdown files in `sources/markdown/specs/` or `sources/markdown/notes/`.
+* Use clear, descriptive, lowercase filenames with underscores (e.g. `memo_101_calibration_heuristics.pdf`).
+
+### 2. Declarative Manifests (`sources/manifests/`)
+* **Code Repositories**: Declare Git clone URLs in [`sources/manifests/repos.txt`](./manifests/repos.txt).
+* **PDF Documents**: Declare public download URLs in [`sources/manifests/pdf.txt`](./manifests/pdf.txt).
+* **Jira Tickets**: Declare JQL queries in [`sources/manifests/jira.txt`](./manifests/jira.txt).
+* **GitHub Discussions**: Declare repos in [`sources/manifests/github.txt`](./manifests/github.txt).
+* **Bitbucket PRs**: Declare repos in [`sources/manifests/bitbucket.txt`](./manifests/bitbucket.txt).
+
+---
+
+## Querying Ingested Content
+
+Once ingested, the entire knowledge base is immediately accessible via Ragdoll:
+
+```bash
+# Interactive Chat
+pixi run ragdoll chat
+
+# Semantic Search
+pixi run ragdoll search "memory allocation buffer" --source code
+pixi run ragdoll search "calibration pipeline" --source pdf
+pixi run ragdoll search "authentication token refresh" --source jira
+```
 
 ---
 
