@@ -314,7 +314,8 @@ def ingest_git_cmd(repo_path: str, max_commits: int, all_commits: bool, no_merge
 @click.argument("path", type=click.Path(exists=False, file_okay=False, path_type=Path), default=None, required=False)
 @click.option("--clone/--no-clone", default=False, help="Clone/update repositories listed in repos/repos.txt before ingesting.")
 @click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all data sources even if unchanged.")
-def ingest_all_cmd(path: Path | None, clone: bool, force: bool) -> None:
+@click.option("-a", "--all-commits", is_flag=True, default=False, help="Index full git history for all repositories (ignores commit count limits).")
+def ingest_all_cmd(path: Path | None, clone: bool, force: bool, all_commits: bool) -> None:
     """Recursively ingest all PDF documents, Markdown specs, and staged code repositories."""
     from ragdoll.ingest.staging import ingest_all_sources, get_working_dir
 
@@ -334,12 +335,13 @@ def ingest_all_cmd(path: Path | None, clone: bool, force: bool) -> None:
             f"🧶 [bold cyan]Ragdoll Knowledge Ingestion[/bold cyan]\n"
             f"Root Directory: [bold]{target_path}[/bold]\n"
             f"Auto-stage Repositories: [bold]{clone}[/bold]\n"
-            f"Force Re-index: [bold]{force}[/bold]",
+            f"Force Re-index: [bold]{force}[/bold]\n"
+            f"All Commits History: [bold]{all_commits}[/bold]",
             expand=False,
         )
     )
     try:
-        summary = ingest_all_sources(root_path=target_path, clone_first=clone, force=force)
+        summary = ingest_all_sources(root_path=target_path, clone_first=clone, force=force, all_commits=all_commits)
     except Exception as e:
         logger.exception("Ingestion failed: %s", e)
         console.print(f"[bold red]Ingestion Error:[/bold red] {e}")

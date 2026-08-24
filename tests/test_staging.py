@@ -106,3 +106,50 @@ https://example.com/docs/new_doc.pdf memos/new_doc.pdf
         assert results[1]["status"] == "Downloaded"
         assert (target_pdf_dir / "memos" / "new_doc.pdf").is_file()
         assert (target_pdf_dir / "memos" / "new_doc.pdf").read_bytes() == b"%PDF-1.4 downloaded new document content"
+
+
+def test_parse_repos_manifest_and_all_commits(tmp_path: Path):
+    from ragdoll.ingest.staging import parse_repos_manifest
+
+    manifest = tmp_path / "repos.txt"
+    manifest.write_text("""
+# Format: <URL> [BRANCH] [DIR] [COMMITS]
+https://github.com/myorg/repo1.git main repo1 all
+https://github.com/myorg/repo2.git master repo2 5000
+https://github.com/myorg/repo3.git - repo3
+""")
+
+    configs = parse_repos_manifest(manifest)
+    assert len(configs) == 3
+    assert configs["repo1"]["all_commits"] is True
+    assert configs["repo1"]["max_commits"] == 0
+
+    assert configs["repo2"]["all_commits"] is False
+    assert configs["repo2"]["max_commits"] == 5000
+
+    assert configs["repo3"]["all_commits"] is False
+    assert configs["repo3"]["max_commits"] == 2000
+
+
+def test_ingest_all_sources_passes_all_commits_flag(tmp_path: Path):
+    repos_dir = tmp_path / "repos"
+    repos_dir.mkdir()
+    myrepo = repos_dir / "myrepo"
+    myrepo.mkdir()
+    (myrepo / ".git").mkdir()
+
+    with (
+        patch("ragdoll.ingest.staging.ingest_git") as mock_ingest_git,
+        patch("ragdoll.ingest.staging.ingest_code") as mock_ingest_code,
+    ):
+        mock_ingest_code.return_value = []
+        mock_ingest_git.return_value = (42, 0)
+
+        summary = ingest_all_sources(root_path=tmp_path, all_commits=True)
+        assert summary["git_commits"] == 42
+        mock_ingest_git.assert_called_once_with(
+            str(myrepo),
+            max_commits=0,
+            all_commits=True,
+            force=False,
+        )

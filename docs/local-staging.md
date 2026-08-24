@@ -58,6 +58,9 @@ pixi run ragdoll ingest-all --clone
 
 # Force re-indexing of all sources even if unmodified:
 pixi run ragdoll ingest-all --force
+
+# Index full commit history across all repositories (ignores 2,000 commit limit):
+pixi run ragdoll ingest-all --all-commits
 ```
 
 This command automatically scans:

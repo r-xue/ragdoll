@@ -57,6 +57,62 @@ def _find_manifest(root_dir: Path, filename: str) -> Path | None:
     return None
 
 
+def parse_repos_manifest(manifest_path: Path | str) -> dict[str, dict[str, Any]]:
+    """Parse repos.txt manifest into a mapping of repo_name -> configuration.
+
+    Supports format:
+        <GIT_URL> [BRANCH] [OPTIONAL_DIR_NAME] [COMMITS_LIMIT]
+
+    Where COMMITS_LIMIT can be:
+        - 'all' / 'full' / '*' : Fetch and index all commits across all history
+        - integer (e.g. 5000)   : Limit commit history to specified number of commits
+        - '-' / omitted        : Defaults to standard 2000 commits
+
+    Returns:
+        dict[str, dict[str, Any]]: Dictionary mapping repo directory name to config dict.
+    """
+    manifest_p = Path(manifest_path)
+    if not manifest_p.is_file():
+        return {}
+
+    configs: dict[str, dict[str, Any]] = {}
+    with open(manifest_p, "r", encoding="utf-8") as f:
+        for line in f:
+            clean = line.strip()
+            if not clean or clean.startswith("#"):
+                continue
+
+            parts = clean.split()
+            url = parts[0]
+            branch = parts[1] if len(parts) > 1 and parts[1] != "-" else None
+            custom_dir = parts[2] if len(parts) > 2 and parts[2] != "-" else None
+            commits_spec = parts[3] if len(parts) > 3 else None
+
+            # Derive repository folder name
+            repo_name = custom_dir or Path(url.rstrip("/")).stem
+            if repo_name.endswith(".git"):
+                repo_name = repo_name[:-4]
+
+            all_commits = False
+            max_commits = 2000
+            if commits_spec:
+                if commits_spec.lower() in ("all", "full", "*"):
+                    all_commits = True
+                    max_commits = 0
+                elif commits_spec.isdigit():
+                    max_commits = int(commits_spec)
+                    all_commits = False
+
+            configs[repo_name] = {
+                "url": url,
+                "branch": branch,
+                "dir_name": repo_name,
+                "all_commits": all_commits,
+                "max_commits": max_commits,
+            }
+    return configs
+
+
 def stage_repositories(
     manifest_path: Path | str | None = None,
     target_dir: Path | str | None = None,
@@ -74,7 +130,7 @@ def stage_repositories(
     Returns:
         list[dict[str, Any]]: Status records for each repository in the manifest.
     """
-    work_dir = _get_working_dir()
+    work_dir = get_working_dir()
     manifest_file: Path | None = None
 
     # 1. Resolve manifest file
@@ -114,25 +170,11 @@ def stage_repositories(
     logger.info("Staging repositories from %s into %s", manifest_file, target_dir_path)
 
     results: list[dict[str, Any]] = []
+    repo_configs = parse_repos_manifest(manifest_file)
 
-    with open(manifest_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    for line in lines:
-        clean = line.strip()
-        if not clean or clean.startswith("#"):
-            continue
-
-        parts = clean.split()
-        url = parts[0]
-        branch = parts[1] if len(parts) > 1 and parts[1] != "-" else None
-        custom_dir = parts[2] if len(parts) > 2 else None
-
-        # Derive repository folder name
-        repo_name = custom_dir or Path(url.rstrip("/")).stem
-        if repo_name.endswith(".git"):
-            repo_name = repo_name[:-4]
-
+    for repo_name, cfg in repo_configs.items():
+        url = cfg["url"]
+        branch = cfg["branch"]
         dest = target_dir_path / repo_name
 
         record = {
@@ -140,6 +182,8 @@ def stage_repositories(
             "branch": branch or "default",
             "name": repo_name,
             "path": dest,
+            "all_commits": cfg["all_commits"],
+            "max_commits": cfg["max_commits"],
             "status": "Unknown",
             "error": None,
         }
@@ -307,6 +351,7 @@ def ingest_all_sources(
     root_path: Path | str = "sources",
     clone_first: bool = False,
     force: bool = False,
+    all_commits: bool = False,
 ) -> dict[str, int]:
     """Recursively ingest all data sources from physical directories and API manifests.
 
@@ -322,11 +367,12 @@ def ingest_all_sources(
         root_path (Path | str): Root directory to inspect (e.g. 'sources/' or '/path/to/ragdoll-sources-pipeline').
         clone_first (bool): If True, runs stage_repositories on any found repos.txt before ingesting.
         force (bool): If True, forces full re-indexing of all data sources.
+        all_commits (bool): If True, fetches full commit histories for all repositories (ignores limits).
 
     Returns:
         dict[str, int]: Ingestion summary counts across all source types.
     """
-    work_dir = _get_working_dir()
+    work_dir = get_working_dir()
     root_p = Path(root_path)
     if not root_p.is_absolute():
         root_p = (work_dir / root_p).resolve()
@@ -353,18 +399,19 @@ def ingest_all_sources(
     }
 
     # 1. Optional Repository & PDF Staging
-    if clone_first:
-        repos_manifest = _find_manifest(root_p, "repos.txt")
-        if repos_manifest:
-            logger.info("Executing repository staging from manifest: %s", repos_manifest)
-            target_dir = repos_manifest.parent.parent / "repos" if repos_manifest.parent.name == "manifests" else repos_manifest.parent
-            stage_repositories(manifest_path=repos_manifest, target_dir=target_dir)
+    repos_manifest = _find_manifest(root_p, "repos.txt")
+    manifest_repo_configs = parse_repos_manifest(repos_manifest) if repos_manifest else {}
 
-        pdf_manifest = _find_manifest(root_p, "pdf.txt")
-        if pdf_manifest:
-            logger.info("Executing PDF download staging from manifest: %s", pdf_manifest)
-            target_pdf_dir = pdf_manifest.parent.parent / "pdf" if pdf_manifest.parent.name == "manifests" else pdf_manifest.parent
-            stage_pdfs(manifest_path=pdf_manifest, target_dir=target_pdf_dir, force=force)
+    if clone_first and repos_manifest:
+        logger.info("Executing repository staging from manifest: %s", repos_manifest)
+        target_dir = repos_manifest.parent.parent / "repos" if repos_manifest.parent.name == "manifests" else repos_manifest.parent
+        stage_repositories(manifest_path=repos_manifest, target_dir=target_dir)
+
+    pdf_manifest = _find_manifest(root_p, "pdf.txt")
+    if clone_first and pdf_manifest:
+        logger.info("Executing PDF download staging from manifest: %s", pdf_manifest)
+        target_pdf_dir = pdf_manifest.parent.parent / "pdf" if pdf_manifest.parent.name == "manifests" else pdf_manifest.parent
+        stage_pdfs(manifest_path=pdf_manifest, target_dir=target_pdf_dir, force=force)
 
     step = 1
 
@@ -437,10 +484,20 @@ def ingest_all_sources(
 
                 # Ingest git history if .git is present
                 if (rdir / ".git").is_dir():
-                    console.print(f"  -> Ingesting Git commit history for [bold]{rdir.name}[/bold]...")
+                    r_cfg = manifest_repo_configs.get(rdir.name, {})
+                    repo_all_commits = all_commits or r_cfg.get("all_commits", False)
+                    repo_max_commits = 0 if repo_all_commits else r_cfg.get("max_commits", 2000)
+
+                    scope_desc = "all commits" if repo_all_commits else f"latest {repo_max_commits} commits"
+                    console.print(f"  -> Ingesting Git commit history for [bold]{rdir.name}[/bold] ({scope_desc})...")
                     try:
                         with GracefulInterrupt():
-                            new_commits, skipped_commits = ingest_git(str(rdir), force=force)
+                            new_commits, skipped_commits = ingest_git(
+                                str(rdir),
+                                max_commits=repo_max_commits,
+                                all_commits=repo_all_commits,
+                                force=force,
+                            )
                         summary["git_commits"] += new_commits
                     except KeyboardInterrupt:
                         console.print(f"  [yellow]⚠ Git ingestion for {rdir.name} interrupted safely.[/yellow]")
