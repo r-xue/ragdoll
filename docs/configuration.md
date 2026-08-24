@@ -34,6 +34,7 @@ github_url = "https://api.github.com"
 chat_model = "gpt-oss:20b"          # Linux/Windows (or "qwen3.8:27b-mlx" on Apple Silicon)
 embed_model = "nomic-embed-text"
 temperature = 0.3
+enable_thinking = false             # Set true to enable reasoning chain-of-thought
 
 # Storage (optional - defaults to ~/.ragdoll/data)
 # Uncomment to use a custom location with more space or faster disk:
@@ -141,6 +142,23 @@ Ragdoll decouples your **Generative / Chat Model** from your **Embedding Model**
   pixi run ragdoll ingest ...
   ```
 
+## Fast Mode vs. Deep Reasoning Mode
+
+Ragdoll supports both **Fast Instruction Models** and **Deep Reasoning Models** via Ollama:
+
+| Mode | Best For | Typical Speed | Configuration / Flag |
+| --- | --- | --- | --- |
+| **Fast Mode (Default)** | Everyday Q&A, ticket counts, Jira/GitHub lookups, document search. | **< 1–2 seconds** | `enable_thinking = false` (or `--no-think`) |
+| **Deep Reasoning Mode** | Complex debugging, architectural trade-offs, multi-document synthesis. | **15–30 seconds** | `enable_thinking = true` (or `--think`) |
+
+### Why Reasoning Mode Takes Longer
+
+When thinking mode is enabled, the model generates hundreds of hidden chain-of-thought tokens in the background before emitting its first visible word. Disabling thinking mode (`enable_thinking = false` or `--no-think`) skips the background scratchpad and streams the answer immediately.
+
+```{note}
+**Automatic Internal Acceleration:** Ragdoll always executes behind-the-scenes helper tasks (query condensation, intent routing, and JQL translation) in Fast Mode. Internal database lookups always complete in milliseconds regardless of user chat mode.
+```
+
 ## Hardware & Model Selection Guide
 
 Ragdoll supports Ollama-compatible embedding and chat models. The tables below summarize tested configurations across representative developer desktop and laptop environments.
@@ -195,6 +213,7 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 | `embed_model` | `str` | `"nomic-embed-text"` | Model for computing embeddings |
 | `chat_model` | `str` | `"gpt-oss:20b"` | Model for generation and chat |
 | `temperature` | `float` | `0.3` | Sampling temperature |
+| `enable_thinking` | `bool` | `false` | Enable model reasoning/thinking mode (chain-of-thought) |
 
 ### Storage
 

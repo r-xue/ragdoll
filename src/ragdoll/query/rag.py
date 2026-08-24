@@ -12,7 +12,7 @@ import re
 
 from llama_index.core import Settings
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
-from ragdoll.config import settings
+from ragdoll.config import get_llm, settings
 from ragdoll.query.retriever import SearchResult, search
 
 logger = logging.getLogger(__name__)
@@ -189,8 +189,11 @@ def summarize(
 
 def query_live_jira(jql: str) -> str:
     """Execute a JQL query directly against all configured JIRA APIs."""
+    if not jql or not jql.strip():
+        return "No valid JQL query provided."
+
     from llama_index.readers.jira import JiraReader
-    from ragdoll.config import settings
+    from ragdoll.config import get_llm, settings
 
     # Collect all server configs to query
     configs_to_query = []
@@ -299,7 +302,7 @@ def query_live_jira(jql: str) -> str:
 
             if issues:
                 all_results.append(
-                    f"### Results from {cfg['name']} ({server_url}):\nFound {issues.total} total tickets. Showing top {len(issues)}:")
+                    f"### Results from {cfg['name']} ({server_url}) for query `{jql}`:\nTotal matching tickets: {issues.total}. Showing top {len(issues)}:")
                 for issue in issues:
                     key = issue.key
                     summary = issue.fields.summary
@@ -330,7 +333,7 @@ def query_live_jira(jql: str) -> str:
 def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
     """Execute a query directly against configured Bitbucket APIs for PRs."""
     import requests
-    from ragdoll.config import settings
+    from ragdoll.config import get_llm, settings
 
     configs_to_query = []
 
@@ -412,7 +415,7 @@ def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
 def query_live_github(owner: str, repo: str, state: str = "open", item_type: str = "all") -> str:
     """Execute a query directly against GitHub API for issues/PRs."""
     import requests
-    from ragdoll.config import settings
+    from ragdoll.config import get_llm, settings
 
     # Resolve target server based on repo mapping
     target_server = None
@@ -499,6 +502,7 @@ def chat_with_context(
     top_k: int | None = None,
     source_filter: str | None = None,
     stream: bool = False,
+    enable_thinking: bool | None = None,
 ) -> str | Generator[str, None, None]:
     """Chat with RAG context injected from the latest user message."""
     user_query = ""
@@ -509,6 +513,8 @@ def chat_with_context(
             user_query = re.sub(r'<chat_history>.*?</chat_history>', '', user_query, flags=re.DOTALL).strip()
             break
 
+    fast_llm = get_llm(thinking=False)
+    active_llm = get_llm(thinking=enable_thinking)
     llama_messages = []
 
     if not user_query or user_query.startswith("### Task:\n"):
@@ -532,7 +538,7 @@ def chat_with_context(
             chat_history_str = "\n".join(history_lines[-6:])
             if chat_history_str.strip():
                 try:
-                    condense_msg = Settings.llm.chat([
+                    condense_msg = fast_llm.chat([
                         ChatMessage(
                             role=MessageRole.USER,
                             content=CONDENSE_PROMPT_TEMPLATE.format(
@@ -550,7 +556,7 @@ def chat_with_context(
 
         # Route query: Database vs Knowledge
         try:
-            intent_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=search_query))])
+            intent_msg = fast_llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=search_query))])
             intent = intent_msg.message.content.strip().upper()
             logger.info("Query Intent Classified as: %s", intent)
         except Exception as e:
@@ -560,9 +566,32 @@ def chat_with_context(
         if "JIRA_DATABASE" in intent or ("DATABASE" in intent and "BITBUCKET" not in intent and "GITHUB" not in intent):
             logger.info("Routing query to Live JIRA Database...")
             try:
-                jql_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=search_query))])
+                jql_msg = fast_llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=search_query))])
                 jql = jql_msg.message.content.strip()
                 jql = re.sub(r"^```jql\s*|```\s*$", "", jql, flags=re.IGNORECASE).strip()
+
+                # If LLM returned empty content (common with thinking models), extract from thinking kwargs or search_query
+                if not jql:
+                    thinking_text = (jql_msg.message.additional_kwargs or {}).get("thinking") or ""
+                    jql_candidates = re.findall(
+                        r"(?:project\s*=\s*['\"]?[A-Za-z0-9_]+['\"]?(?:\s+(?:AND|OR)\s+[^\n\r`]+)*)",
+                        thinking_text,
+                        flags=re.IGNORECASE,
+                    )
+                    valid_candidates = [c.strip().strip("`*\"'\t") for c in jql_candidates if "CORE" not in c.upper()]
+                    if valid_candidates:
+                        jql = valid_candidates[-1].strip()
+
+                if not jql:
+                    proj_match = re.findall(r"\b[A-Z]{2,10}\b", search_query)
+                    if proj_match:
+                        proj = proj_match[0]
+                        jql = f"project = {proj}"
+                        quoted_status = re.findall(r"['\"]([^'\"]+)['\"]", search_query)
+                        if quoted_status:
+                            jql += f' AND status ~ "{quoted_status[0]}"'
+                        elif "open" in search_query.lower() or "active" in search_query.lower() or "unresolved" in search_query.lower():
+                            jql += ' AND statusCategory != Done'
                 logger.info("Generated JQL: %s", jql)
 
                 live_results = query_live_jira(jql)
@@ -606,7 +635,7 @@ def chat_with_context(
                     known_repos=known_repos_str,
                     default_owner=default_owner,
                 )
-                gh_msg = Settings.llm.chat([ChatMessage(role=MessageRole.USER, content=prompt_text)])
+                gh_msg = fast_llm.chat([ChatMessage(role=MessageRole.USER, content=prompt_text)])
                 params_str = gh_msg.message.content.strip()
 
                 owner, repo, state, item_type = "UNKNOWN", "UNKNOWN", "all", "all"
@@ -647,8 +676,8 @@ def chat_with_context(
             llama_messages.append(ChatMessage(role=role, content=msg["content"]))
 
     if stream:
-        resp = Settings.llm.stream_chat(llama_messages)
+        resp = active_llm.stream_chat(llama_messages)
         return (chunk.delta or "" for chunk in resp)
 
-    resp = Settings.llm.chat(llama_messages)
+    resp = active_llm.chat(llama_messages)
     return resp.message.content or ""

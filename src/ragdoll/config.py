@@ -185,6 +185,7 @@ class Settings(BaseSettings):
     embed_model: str = "nomic-embed-text"
     chat_model: str = "gpt-oss:20b"
     temperature: float = 0.3
+    enable_thinking: bool = False
 
     # ── Storage ────────────────────────────────────────────────────────
     data_dir: Path = Path.home() / ".ragdoll" / "data"
@@ -204,6 +205,18 @@ class Settings(BaseSettings):
     top_k: int = 5  # number of chunks to retrieve (default: 5)
 
     @property
+    def llm_model(self) -> str:
+        return self.chat_model
+
+    @property
+    def ollama_base_url(self) -> str:
+        return self.ollama_host
+
+    @property
+    def thinking(self) -> bool:
+        return self.enable_thinking
+
+    @property
     def chroma_dir(self) -> Path:
         """Path to the ChromaDB persistent storage directory."""
         return self.data_dir / "chroma"
@@ -218,7 +231,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-def setup_llamaindex():
+def setup_llamaindex(thinking: bool | None = None):
     from llama_index.core import Settings as LlamaSettings
     from llama_index.llms.ollama import Ollama
     from llama_index.embeddings.ollama import OllamaEmbedding
@@ -281,11 +294,13 @@ def setup_llamaindex():
             return result.embeddings
 
     # Configure global LLM and Embeddings for LlamaIndex
+    eff_thinking = settings.enable_thinking if thinking is None else thinking
     LlamaSettings.llm = Ollama(
         model=settings.chat_model,
         base_url=settings.ollama_host,
         temperature=settings.temperature,
         request_timeout=600.0,
+        thinking=eff_thinking,
         additional_kwargs={"num_predict": 2048},
     )
     LlamaSettings.embed_model = OllamaEmbed(
@@ -294,6 +309,20 @@ def setup_llamaindex():
     )
     LlamaSettings.chunk_size = settings.chunk_size
     LlamaSettings.chunk_overlap = settings.chunk_overlap
+
+
+def get_llm(thinking: bool | None = None):
+    """Get an Ollama LLM instance with runtime thinking toggle support."""
+    from llama_index.llms.ollama import Ollama
+    eff_thinking = settings.enable_thinking if thinking is None else thinking
+    return Ollama(
+        model=settings.chat_model,
+        base_url=settings.ollama_host,
+        temperature=settings.temperature,
+        request_timeout=600.0,
+        thinking=eff_thinking,
+        additional_kwargs={"num_predict": 2048},
+    )
 
 
 # Initialize on import

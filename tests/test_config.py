@@ -94,3 +94,13 @@ def test_chroma_settings():
     assert s.chroma_port == 8080
     assert s.chroma_ssl is True
     assert s.chroma_auth_token == "secret-token"
+
+
+def test_thinking_settings():
+    s = Settings(enable_thinking=True)
+    assert s.enable_thinking is True
+    assert s.thinking is True
+
+    s_off = Settings(enable_thinking=False)
+    assert s_off.enable_thinking is False
+    assert s_off.thinking is False
