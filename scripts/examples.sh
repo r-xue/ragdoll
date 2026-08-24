@@ -4,6 +4,18 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
+# 0. One-Click Multi-Source Ingestion & Repository Staging
+# ------------------------------------------------------------------------------
+# Stage/clone external repositories declared in manifest:
+# pixi run ragdoll stage-repos sources/repos/repos.txt
+
+# Ingest all staged PDFs, Markdown specs, and repositories in one pass:
+# pixi run ragdoll ingest-all sources
+
+# Automatically stage repositories and ingest all sources:
+# pixi run ragdoll ingest-all sources --clone
+
+# ------------------------------------------------------------------------------
 # 1. Jira Ingestion (Incremental with Smart Server Targeting)
 # ------------------------------------------------------------------------------
 # Ingest via named server configuration in ~/.ragdoll/config.toml:

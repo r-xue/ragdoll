@@ -65,10 +65,9 @@ def ingest() -> None:
 
 @ingest.command("pdf")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
-@click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
-@click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
-def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: int | None) -> None:
-    """Ingest PDF files or directories of PDFs."""
+@click.option("--force", is_flag=True, default=False, help="Force re-indexing of all PDFs even if unmodified.")
+def ingest_pdf(paths: tuple[str, ...], force: bool) -> None:
+    """Ingest PDF files or directories of PDFs with incremental change detection."""
     from ragdoll.ingest.pdf import ingest_pdfs
     from ragdoll.store.vectordb import count
 
@@ -76,14 +75,19 @@ def ingest_pdf(paths: tuple[str, ...], chunk_size: int | None, chunk_overlap: in
         console.print("[red]Error:[/red] Provide at least one PDF file or directory.")
         raise SystemExit(1)
 
-    console.print(f"[bold cyan]Loading and embedding PDFs from {paths[0]}…[/bold cyan]")
-    n = ingest_pdfs(paths[0])
+    console.print(f"[bold cyan]Scanning and embedding PDFs from {paths[0]}…[/bold cyan]")
+    new_count, skipped_count = ingest_pdfs(list(paths), force=force)
 
-    if n == 0:
-        console.print("[yellow]No documents extracted.[/yellow]")
+    if new_count == 0 and skipped_count == 0:
+        console.print("[yellow]No PDF documents found or extracted.[/yellow]")
         return
 
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
+    if new_count > 0:
+        skip_str = f" ([dim]{skipped_count} already up-to-date skipped[/dim])" if skipped_count > 0 else ""
+        console.print(f"  � Stored [green]{new_count}[/green] new/updated chunk(s){skip_str} in vector DB")
+    else:
+        console.print(f"  ✨ All [green]{skipped_count}[/green] PDF(s) are already indexed and up-to-date in ChromaDB.")
+
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
@@ -302,6 +306,73 @@ def ingest_git_cmd(repo_path: str, max_commits: int, all_commits: bool, no_merge
         console.print(f"  ✨ All [green]{skipped_count}[/green] commits are already indexed and up-to-date in ChromaDB.")
 
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+
+
+@ingest.command("all")
+@click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=Path("sources"), required=False)
+@click.option("--clone/--no-clone", default=False, help="Clone/update repositories listed in repos/repos.txt before ingesting.")
+def ingest_all_cmd(path: Path, clone: bool) -> None:
+    """Recursively ingest all PDF documents, Markdown specs, and staged code repositories."""
+    from ragdoll.ingest.staging import ingest_all_sources
+    console.print(
+        Panel(
+            f"🧶 [bold cyan]Ragdoll Knowledge Ingestion[/bold cyan]\\n"
+            f"Root Directory: [bold]{path.resolve()}[/bold]\\n"
+            f"Auto-stage Repositories: [bold]{clone}[/bold]",
+            expand=False,
+        )
+    )
+    try:
+        summary = ingest_all_sources(root_path=path, clone_first=clone)
+    except Exception as e:
+        console.print(f"[bold red]Ingestion Error:[/bold red] {e}")
+        raise click.Abort()
+
+    table = Table(title="Ingestion Summary", show_header=True, header_style="bold cyan")
+    table.add_column("Category", style="bold")
+    table.add_column("Ingested Count", justify="right")
+
+    table.add_row("PDF Document Pages / Nodes", str(summary["pdf_documents"]))
+    table.add_row("Markdown Specification Chunks", str(summary["markdown_documents"]))
+    table.add_row("Source Code AST Chunks", str(summary["code_documents"]))
+    table.add_row("Git Commits Indexed", str(summary["git_commits"]))
+
+    console.print(table)
+    console.print("\\n✨ [bold green]Ingestion complete![/bold green] Start chatting with: [bold]pixi run ragdoll chat[/bold]")
+
+
+@cli.command("stage-repos")
+@click.argument("manifest", type=click.Path(dir_okay=False, path_type=Path), required=False)
+@click.option("--target-dir", "-d", type=click.Path(file_okay=False, path_type=Path), default=None, help="Target directory to clone repositories into.")
+@click.option("--pull/--no-pull", default=True, help="Update existing repositories with git pull --ff-only.")
+@click.option("--depth", type=int, default=None, help="Create shallow clone with specified commit depth.")
+def stage_repos_cmd(manifest: Path | None, target_dir: Path | None, pull: bool, depth: int | None) -> None:
+    """Clone or update external Git repositories listed in a manifest file (e.g. repos.txt)."""
+    from ragdoll.ingest.staging import stage_repositories
+    try:
+        results = stage_repositories(manifest_path=manifest, target_dir=target_dir, pull=pull, depth=depth)
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise click.Abort()
+
+    table = Table(title="Staged Repositories", show_header=True, header_style="bold cyan")
+    table.add_column("Repository", style="bold")
+    table.add_column("Branch")
+    table.add_column("Destination")
+    table.add_column("Status")
+
+    for r in results:
+        style = "green" if r["status"] in ("Cloned", "Updated", "Up to date") else "yellow" if "Skipped" in r["status"] else "red"
+        status_str = f"[{style}]{r['status']}[/{style}]"
+        if r["error"]:
+            status_str += f" ({r['error']})"
+        table.add_row(r["name"], r["branch"], str(r["path"]), status_str)
+
+    console.print(table)
+
+
+# Direct CLI root alias for ingest-all
+cli.add_command(ingest_all_cmd, name="ingest-all")
 
 
 # ── Search command ─────────────────────────────────────────────────────

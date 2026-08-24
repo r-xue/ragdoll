@@ -23,11 +23,11 @@ sources/
 1. **Stage your sources**:
    * Copy `.pdf` files into `sources/pdf/`
    * Copy `.md` files into `sources/markdown/`
-   * Add Git repository URLs to `sources/repos/repos.txt` and run `./scripts/clone_repos.sh`
+   * Add Git repository URLs to `sources/repos/repos.txt` and run `pixi run ragdoll stage-repos`
 
 2. **Run batch ingestion**:
    ```bash
-   ./scripts/ingest.sh
+   pixi run ragdoll ingest-all
    ```
 
 3. **Start chatting**:

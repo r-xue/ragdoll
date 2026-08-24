@@ -5,23 +5,54 @@ chunks it, computes embeddings via Ollama, and stores them in ChromaDB.
 
 ```{tip}
 **Looking for automated batch staging?**
-See the **[Local Knowledge Staging & Batch Ingestion](local-staging.md)** guide to organize files inside `sources/` and run `./scripts/ingest.sh` to ingest everything at once.
+See the **[Local Knowledge Staging & Batch Ingestion](local-staging.md)** guide to organize files inside `sources/` and run `pixi run ragdoll ingest-all` to ingest everything at once.
 ```
 
-## PDF Documents
+## One-Click Multi-Source Ingestion (`ingest-all`)
+
+Ragdoll provides an automated orchestrator that walks a structured knowledge folder (e.g. `sources/` or an external documentation repository) and indexes all PDFs, Markdown specifications, and staged code repositories in one pass:
 
 ```bash
-# Single file
-pixi run ragdoll ingest pdf ./handbook.pdf
+# Ingest local sources/ staging folder (default)
+pixi run ragdoll ingest-all
 
-# Directory (recursive)
-pixi run ragdoll ingest pdf ./docs/
+# Or ingest an external sources directory
+pixi run ragdoll ingest-all /path/to/ragdoll-sources-pipeline
 
-# Multiple paths
-pixi run ragdoll ingest pdf ./report.pdf ./specs/
+# Automatically clone/update repositories listed in repos/repos.txt before indexing
+pixi run ragdoll ingest-all --clone
 ```
 
-PDFs are processed with PyMuPDF and split into overlapping character-based chunks.
+## Repository Manifest Staging (`stage-repos`)
+
+You can declaratively stage and update external Git repositories for code and history ingestion using a `repos.txt` manifest:
+
+```bash
+# Stage repositories defined in sources/repos/repos.txt (default)
+pixi run ragdoll stage-repos
+
+# Stage repositories from a custom manifest into a specific target folder
+pixi run ragdoll stage-repos /path/to/repos.txt --target-dir /path/to/clones
+
+# Perform fast shallow clones (depth=1)
+pixi run ragdoll stage-repos --depth 1
+```
+
+## PDF Documents (Incremental with Content Hashing)
+
+Ragdoll calculates SHA-256 checksums of all scanned PDFs and compares them against existing records in ChromaDB:
+
+- **Unchanged PDFs**: Automatically bypassed with zero redundant embeddings.
+- **Modified PDFs**: Outdated vector chunks are purged and replaced with freshly parsed pages.
+- **Force Re-indexing**: Pass `--force` to re-embed all PDFs.
+
+```bash
+# Ingest single file or directory with incremental change detection (fast)
+pixi run ragdoll ingest pdf ./docs/
+
+# Force re-indexing of all PDFs even if unmodified
+pixi run ragdoll ingest pdf ./docs/ --force
+```
 
 ## JIRA Tickets
 

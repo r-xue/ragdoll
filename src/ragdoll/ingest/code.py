@@ -217,7 +217,7 @@ def _extract_py_function(
 
     documents.append(
         Document(
-            doc_id=f"code:{filepath}::{node.name}",
+            doc_id=f"code:{filepath}::{node.name}:{node.lineno}",
             text=header + source,
             metadata={
                 "source": "code",
@@ -243,7 +243,7 @@ def _extract_py_class(
 
     documents.append(
         Document(
-            doc_id=f"code:{filepath}::{node.name}",
+            doc_id=f"code:{filepath}::{node.name}:{node.lineno}",
             text=header + source,
             metadata={
                 "source": "code",
@@ -578,6 +578,17 @@ def ingest_code(
         docs = _extract_nodes(source, filepath_str, effective_chunk_size, effective_overlap)
         all_docs.extend(docs)
         logger.debug("Extracted %d nodes from %s", len(docs), filepath_str)
+
+    # Ensure 100% unique document IDs across all files and AST chunks
+    seen_ids: set[str] = set()
+    for doc in all_docs:
+        if doc.id_ in seen_ids:
+            base_id = doc.id_
+            counter = 1
+            while f"{base_id}_{counter}" in seen_ids:
+                counter += 1
+            doc.id_ = f"{base_id}_{counter}"
+        seen_ids.add(doc.id_)
 
     logger.info("Extracted %d code documents from %d files.", len(all_docs), len(target_files))
     return all_docs
