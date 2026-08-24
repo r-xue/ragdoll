@@ -144,7 +144,7 @@ Ragdoll decouples your **Generative / Chat Model** from your **Embedding Model**
 
 ## Fast Mode vs. Deep Reasoning Mode
 
-Ragdoll supports both **Fast Instruction Models** and **Deep Reasoning Models** via Ollama:
+Ragdoll supports both **Fast Instruction Models** and **Deep Reasoning Models** via [Ollama](https://ollama.com) (see [Ollama Reasoning Models Guide](https://docs.ollama.com/capabilities/thinking)):
 
 | Mode | Best For | Typical Speed | Configuration / Flag |
 | --- | --- | --- | --- |

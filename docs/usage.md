@@ -46,7 +46,7 @@ pixi run ragdoll chat --source code -n 12
   sessions (stored in `~/.ragdoll/chat_history`, capped at 500 entries)
 - **Full line editing** — backspace, arrow keys, Home/End all work
 - **Source filtering** — `--source` limits retrieval to a specific data source
-- **Streaming & Reasoning Control** — stream responses token-by-token with optional `--think` / `--no-think` runtime controls
+- **Streaming & Reasoning Control** — stream responses token-by-token with optional `--think` / `--no-think` runtime controls (supporting [Ollama Reasoning / Thinking Models](https://docs.ollama.com/capabilities/thinking))
 - **Live Database Querying** — ask questions like *"List all open bugs for the PROJ project"* or *"Show me PRs by author"*. The Intent Router will detect this and automatically query the live Jira/Bitbucket APIs instead of the vector database.
 
 ### Multi-Turn Conversational Follow-ups
@@ -82,17 +82,17 @@ When you ask for current lists, unresolved tickets, PR reviews, or exact item co
 **Smart Project Routing:** You can map projects to specific Jira servers in `~/.ragdoll/config.toml` using `projects = ["PROJ1", "PROJ2"]`. Ragdoll will route live queries directly to the correct server without probing other instances.
 ```
 
-- **Jira (Dynamic JQL Generation)**:
+- **Jira (Dynamic JQL Generation)** via [Jira Query Language (JQL)](https://support.atlassian.com/jira-service-management-cloud/docs/use-advanced-search-with-jira-query-language-jql/):
   > *"List all unresolved Critical bugs in the PROJ project updated in the last 7 days."*
   >
   > *(Ragdoll dynamically generates `project = PROJ AND priority = Critical AND resolution = Unresolved AND updated >= -7d` and queries your live Jira server).*
 
-- **GitHub (Live Search API)**:
+- **GitHub (Live Search API)** via [GitHub Search API](https://docs.github.com/en/rest/search/search):
   > *"How many open pull requests are currently in myorg/myrepo?"*
   >
   > *(Ragdoll extracts `owner="myorg"`, `repo="myrepo"`, `state="open"`, `type="pr"`, queries GitHub's `/search/issues` endpoint, and returns the exact live count and recent PR details).*
 
-- **Bitbucket (Live REST API)**:
+- **Bitbucket (Live REST API)** via [Bitbucket REST API](https://developer.atlassian.com/server/bitbucket/rest/v819/intro/):
   > *"Show me open pull requests for repo backend in project PROJ."*
   >
   > *(Ragdoll queries your Bitbucket Data Center REST API for active PRs and approval statuses).*
