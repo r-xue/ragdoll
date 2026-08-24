@@ -69,3 +69,40 @@ def test_ingest_all_sources_directory_and_manifests(tmp_path: Path):
         mock_jira.assert_called_once_with(jql="project = TEST", server="primary", force=False)
         mock_github.assert_called_once_with(owner="myorg", repo="myrepo", state="all", server=None)
         mock_bitbucket.assert_called_once_with(project="MYPROJ", repo="myrepo", state="ALL", server=None)
+
+
+def test_stage_pdfs_download_and_cache(tmp_path: Path):
+    from ragdoll.ingest.staging import stage_pdfs
+    import io
+
+    manifests_dir = tmp_path / "manifests"
+    manifests_dir.mkdir()
+    pdf_manifest = manifests_dir / "pdf.txt"
+    pdf_manifest.write_text("""
+# Test PDF manifest
+https://example.com/docs/existing.pdf user_guides/existing.pdf
+https://example.com/docs/new_doc.pdf memos/new_doc.pdf
+""")
+
+    target_pdf_dir = tmp_path / "pdf"
+    target_pdf_dir.mkdir()
+    user_guides = target_pdf_dir / "user_guides"
+    user_guides.mkdir()
+    (user_guides / "existing.pdf").write_bytes(b"%PDF-1.4 existing file content")
+
+    mock_response = io.BytesIO(b"%PDF-1.4 downloaded new document content")
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        results = stage_pdfs(manifest_path=pdf_manifest, target_dir=target_pdf_dir)
+
+        assert len(results) == 2
+        # First file was already present locally
+        assert results[0]["status"] == "Up to date"
+        assert Path(results[0]["destination"]).name == "existing.pdf"
+
+        # Second file was downloaded
+        assert results[1]["status"] == "Downloaded"
+        assert (target_pdf_dir / "memos" / "new_doc.pdf").is_file()
+        assert (target_pdf_dir / "memos" / "new_doc.pdf").read_bytes() == b"%PDF-1.4 downloaded new document content"

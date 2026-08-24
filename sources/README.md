@@ -14,8 +14,9 @@ sources/
  pdf/              # Place PDF technical memos, reports, manuals, and specs
  markdown/         # Place Markdown specifications, technical notes, and contracts
  repos/            # Local Git repository clones for code and commit analysis
- manifests/        # Declarative API and repository manifests
+ manifests/        # Declarative API, PDF, and repository manifests
     ├── repos.txt     # Git repositories to clone and index (AST + Git commits)
+    ├── pdf.txt       # Remote PDF download URLs to sync into pdf/
     ├── jira.txt      # Jira JQL queries to fetch tickets and comments
     ├── github.txt    # GitHub repositories to fetch Issues and PR discussions
     └── bitbucket.txt # Bitbucket repositories to fetch PR reviews and discussions
@@ -29,14 +30,17 @@ sources/
    * Copy `.pdf` files into `sources/pdf/`
    * Copy `.md` files into `sources/markdown/`
    * Declare Git repos in `sources/manifests/repos.txt` and run `pixi run ragdoll stage-repos`
+   * Declare remote PDF URLs in `sources/manifests/pdf.txt` and run `pixi run ragdoll stage-pdfs`
    * Declare API queries in `sources/manifests/jira.txt`, `github.txt`, `bitbucket.txt`
 
 2. **Run batch ingestion**:
+
    ```bash
    pixi run ragdoll ingest-all
    ```
 
 3. **Start chatting**:
+
    ```bash
    pixi run ragdoll chat
    ```

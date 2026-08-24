@@ -12,6 +12,8 @@ import os
 import re
 import shlex
 import subprocess
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -186,6 +188,117 @@ def stage_repositories(
     return results
 
 
+def stage_pdfs(
+    manifest_path: Path | str | None = None,
+    target_dir: Path | str | None = None,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    """Download and sync remote PDF documents declared in a manifest file (e.g. pdf.txt).
+
+    Manifest line format:
+        <URL> [OPTIONAL_SUBPATH_OR_FILENAME]
+
+    Args:
+        manifest_path (Path | str | None): Path to pdf.txt or directory containing manifests/.
+        target_dir (Path | str | None): Destination directory (defaults to sibling pdf/ directory).
+        force (bool): If True, forces re-download even if file exists locally.
+
+    Returns:
+        list[dict[str, Any]]: Download summary records.
+    """
+    work_dir = _get_working_dir()
+
+    # 1. Resolve manifest file
+    manifest_file: Path | None = None
+    if manifest_path is not None:
+        p = Path(manifest_path)
+        if not p.is_absolute():
+            p = (work_dir / p).resolve()
+        if p.is_file():
+            manifest_file = p
+        elif p.is_dir():
+            manifest_file = _find_manifest(p, "pdf.txt")
+
+    if manifest_file is None:
+        manifest_file = _find_manifest(work_dir, "pdf.txt")
+
+    if manifest_file is None or not manifest_file.is_file():
+        raise FileNotFoundError(
+            f"PDF manifest file not found: {manifest_path or 'manifests/pdf.txt'}. "
+            "Please specify a valid manifest path or create manifests/pdf.txt."
+        )
+
+    # 2. Determine target directory
+    if target_dir is None:
+        if manifest_file.parent.name == "manifests":
+            target_dir_path = manifest_file.parent.parent / "pdf"
+        else:
+            target_dir_path = manifest_file.parent
+    else:
+        target_dir_p = Path(target_dir)
+        if not target_dir_p.is_absolute():
+            target_dir_path = (work_dir / target_dir_p).resolve()
+        else:
+            target_dir_path = target_dir_p.resolve()
+
+    target_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info("Staging PDFs from %s into %s", manifest_file, target_dir_path)
+
+    # 3. Read and process manifest lines
+    results: list[dict[str, Any]] = []
+    lines = manifest_file.read_text(encoding="utf-8").splitlines()
+
+    for line in lines:
+        clean = line.strip()
+        if not clean or clean.startswith("#"):
+            continue
+
+        parts = clean.split(maxsplit=1)
+        url = parts[0]
+        custom_subpath = parts[1] if len(parts) > 1 else None
+
+        if custom_subpath:
+            dest = target_dir_path / custom_subpath
+        else:
+            parsed_path = urllib.parse.urlparse(url).path
+            filename = Path(parsed_path).name or "document.pdf"
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+            dest = target_dir_path / filename
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        record: dict[str, Any] = {
+            "url": url,
+            "destination": dest,
+            "status": "Unknown",
+            "error": None,
+        }
+
+        try:
+            if dest.is_file() and dest.stat().st_size > 0 and not force:
+                record["status"] = "Up to date"
+            else:
+                logger.info("Downloading %s -> %s", url, dest)
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Ragdoll-Pipeline/1.0 (Python urllib)"},
+                )
+                part_dest = dest.with_suffix(dest.suffix + ".part")
+                with urllib.request.urlopen(req, timeout=60) as resp, open(part_dest, "wb") as out_f:
+                    while chunk := resp.read(64 * 1024):
+                        out_f.write(chunk)
+                part_dest.replace(dest)
+                record["status"] = "Downloaded"
+        except Exception as e:
+            record["status"] = "Error"
+            record["error"] = str(e)
+            logger.warning("Failed to download %s: %s", url, e)
+
+        results.append(record)
+
+    return results
+
+
 def ingest_all_sources(
     root_path: Path | str = "sources",
     clone_first: bool = False,
@@ -227,12 +340,19 @@ def ingest_all_sources(
         "bitbucket_prs": 0,
     }
 
-    # 1. Optional Repository Staging
-    repos_manifest = _find_manifest(root_p, "repos.txt")
-    if clone_first and repos_manifest:
-        logger.info("Executing repository staging from manifest: %s", repos_manifest)
-        target_dir = repos_manifest.parent.parent / "repos" if repos_manifest.parent.name == "manifests" else repos_manifest.parent
-        stage_repositories(manifest_path=repos_manifest, target_dir=target_dir)
+    # 1. Optional Repository & PDF Staging
+    if clone_first:
+        repos_manifest = _find_manifest(root_p, "repos.txt")
+        if repos_manifest:
+            logger.info("Executing repository staging from manifest: %s", repos_manifest)
+            target_dir = repos_manifest.parent.parent / "repos" if repos_manifest.parent.name == "manifests" else repos_manifest.parent
+            stage_repositories(manifest_path=repos_manifest, target_dir=target_dir)
+
+        pdf_manifest = _find_manifest(root_p, "pdf.txt")
+        if pdf_manifest:
+            logger.info("Executing PDF download staging from manifest: %s", pdf_manifest)
+            target_pdf_dir = pdf_manifest.parent.parent / "pdf" if pdf_manifest.parent.name == "manifests" else pdf_manifest.parent
+            stage_pdfs(manifest_path=pdf_manifest, target_dir=target_pdf_dir, force=force)
 
     step = 1
 

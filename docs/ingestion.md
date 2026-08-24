@@ -38,6 +38,18 @@ pixi run ragdoll stage-repos /path/to/repos.txt --target-dir /path/to/clones
 pixi run ragdoll stage-repos --depth 1
 ```
 
+## PDF Manifest Staging (`stage-pdfs`)
+
+You can declaratively download and sync remote PDF manuals, memos, and whitepapers into `pdf/` using a `pdf.txt` manifest:
+
+```bash
+# Download and sync PDFs defined in sources/manifests/pdf.txt (default)
+pixi run ragdoll stage-pdfs
+
+# Force re-download even if files exist locally
+pixi run ragdoll stage-pdfs --force
+```
+
 ## PDF Documents (Incremental with Content Hashing)
 
 Ragdoll calculates SHA-256 checksums of all scanned PDFs and compares them against existing records in ChromaDB:

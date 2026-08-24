@@ -377,6 +377,34 @@ def stage_repos_cmd(manifest: Path | None, target_dir: Path | None, pull: bool, 
     console.print(table)
 
 
+@cli.command("stage-pdfs")
+@click.argument("manifest", type=click.Path(dir_okay=False, path_type=Path), required=False)
+@click.option("--target-dir", "-d", type=click.Path(file_okay=False, path_type=Path), default=None, help="Target directory to download PDFs into.")
+@click.option("--force", "-f", is_flag=True, default=False, help="Force re-downloading PDFs even if they already exist locally.")
+def stage_pdfs_cmd(manifest: Path | None, target_dir: Path | None, force: bool) -> None:
+    """Download and sync remote PDF documents declared in a manifest file (e.g. pdf.txt)."""
+    from ragdoll.ingest.staging import stage_pdfs
+    try:
+        results = stage_pdfs(manifest_path=manifest, target_dir=target_dir, force=force)
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise click.Abort()
+
+    table = Table(title="Staged PDF Documents", show_header=True, header_style="bold cyan")
+    table.add_column("Document / URL", style="cyan")
+    table.add_column("Destination", style="dim")
+    table.add_column("Status")
+
+    for r in results:
+        style = "green" if r["status"] in ("Downloaded", "Up to date") else "red"
+        status_str = f"[{style}]{r["status"]}[/{style}]"
+        if r.get("error"):
+            status_str += f" ({r["error"]})"
+        table.add_row(r["url"], str(r["destination"]), status_str)
+
+    console.print(table)
+
+
 # Direct CLI root alias for ingest-all
 cli.add_command(ingest_all_cmd, name="ingest-all")
 

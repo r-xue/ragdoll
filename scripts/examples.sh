@@ -14,16 +14,22 @@
 # ------------------------------------------------------------------------------
 # 0. One-Click Multi-Source Ingestion & Repository Staging
 # ------------------------------------------------------------------------------
-# Stage/clone external repositories declared in manifest:
-# pixi run ragdoll stage-repos sources/manifests/repos.txt
-
-# Ingest all staged PDFs, Markdown specs, and repositories in one pass:
+# Ingest all sources in one pass:
+# (Scans local pdf/, markdown/, already-staged repos/, and queries Jira/GitHub/Bitbucket APIs via manifests/)
 # pixi run ragdoll ingest-all sources
 
-# Automatically stage repositories and ingest all sources:
+# Full Sync & Ingestion (Recommended):
+# (1. First runs stage-repos to clone/pull Git repos from manifests/repos.txt into repos/)
+# (2. Then indexes pdf/, markdown/, repos/ code AST + commits, and all live API manifests)
 # pixi run ragdoll ingest-all sources --clone
 
-# Run from an external sources repository:
+# Stage/pull Git repositories declared in manifest ONLY (no indexing):
+# pixi run ragdoll stage-repos sources/manifests/repos.txt
+
+# Stage/download remote PDF documents declared in manifest ONLY (no indexing):
+# pixi run ragdoll stage-pdfs sources/manifests/pdf.txt
+
+# Run from an external sources repository (e.g. sibling data workspace):
 # pixi run -m ../ragdoll ragdoll ingest-all . --clone
 # pixi run --manifest-path /path/to/ragdoll ragdoll ingest-all .
 
