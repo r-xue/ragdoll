@@ -1,9 +1,15 @@
 # ==============================================================================
 # Ragdoll Git Repository Manifest
 # List external Git repositories to clone and index (AST code + Git history).
-# Format: <GIT_URL> [BRANCH] [CUSTOM_DIR]
+# Format: <GIT_URL> [BRANCH] [CUSTOM_DIR] [COMMITS_LIMIT]
+#
+# COMMITS_LIMIT can be:
+# - 'all' or 'full': Index full commit history across all branches/tags
+# - integer (e.g. 5000): Limit history indexing to specific number of commits
+# - '-' or omitted: Default 2000 commits
 #
 # Examples:
-# https://github.com/myorg/web-app.git main web-app
-# https://github.com/myorg/data-service.git
+# https://github.com/myorg/web-app.git main web-app all
+# https://github.com/myorg/data-service.git main data-service 5000
+# https://github.com/myorg/shared-utils.git
 # ==============================================================================
