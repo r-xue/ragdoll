@@ -509,8 +509,14 @@ def chat_with_context(
     for msg in reversed(messages):
         if msg["role"] == "user":
             user_query = msg["content"]
-            # Clean up Open WebUI's injected chat history
-            user_query = re.sub(r'<chat_history>.*?</chat_history>', '', user_query, flags=re.DOTALL).strip()
+            # Clean up Open WebUI's injected chat history without regex backtracking (ReDoS safe)
+            while "<chat_history>" in user_query and "</chat_history>" in user_query:
+                start = user_query.find("<chat_history>")
+                end = user_query.find("</chat_history>", start)
+                if end == -1:
+                    break
+                user_query = user_query[:start] + user_query[end + len("</chat_history>"):]
+            user_query = user_query.strip()
             break
 
     fast_llm = get_llm(thinking=False)
