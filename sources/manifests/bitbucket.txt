@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll Bitbucket PRs Manifest
+# List Bitbucket Server repositories to fetch Pull Request reviews & comments.
+# Format: <PROJECT_KEY> <REPO_SLUG> [STATE: ALL|OPEN|MERGED|DECLINED] [SERVER_NAME]
+#
+# Examples:
+# APP backend-service ALL
+# CORE data-pipeline ALL primary
+# ==============================================================================

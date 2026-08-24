@@ -35,7 +35,7 @@ sources/
 
 1. **PDFs**: Copy `.pdf` files into `sources/pdf/`
 2. **Markdown**: Copy `.md` files into `sources/markdown/`
-3. **Repositories**: Add Git repository URLs to `sources/repos/repos.txt` (format: `<repo_url> [branch] [custom_folder_name]`):
+3. **Repositories**: Add Git repository URLs to `sources/manifests/repos.txt` (format: `<repo_url> [branch] [custom_folder_name]`):
    ```text
    https://github.com/my-org/core-engine.git main core-engine
    https://github.com/my-org/web-ui.git

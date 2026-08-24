@@ -336,6 +336,12 @@ def ingest_all_cmd(path: Path, clone: bool) -> None:
     table.add_row("Markdown Specification Chunks", str(summary["markdown_documents"]))
     table.add_row("Source Code AST Chunks", str(summary["code_documents"]))
     table.add_row("Git Commits Indexed", str(summary["git_commits"]))
+    if summary.get("jira_tickets", 0) > 0:
+        table.add_row("Jira Tickets & Comments", str(summary["jira_tickets"]))
+    if summary.get("github_items", 0) > 0:
+        table.add_row("GitHub Issues & PRs", str(summary["github_items"]))
+    if summary.get("bitbucket_prs", 0) > 0:
+        table.add_row("Bitbucket PR Discussions", str(summary["bitbucket_prs"]))
 
     console.print(table)
     console.print("\\n✨ [bold green]Ingestion complete![/bold green] Start chatting with: [bold]pixi run ragdoll chat[/bold]")

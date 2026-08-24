@@ -19,7 +19,7 @@ pixi run ragdoll ingest-all
 # Or ingest an external sources directory
 pixi run ragdoll ingest-all /path/to/ragdoll-sources-pipeline
 
-# Automatically clone/update repositories listed in repos/repos.txt before indexing
+# Automatically clone/update repositories listed in manifests/repos.txt before indexing
 pixi run ragdoll ingest-all --clone
 ```
 
@@ -28,7 +28,7 @@ pixi run ragdoll ingest-all --clone
 You can declaratively stage and update external Git repositories for code and history ingestion using a `repos.txt` manifest:
 
 ```bash
-# Stage repositories defined in sources/repos/repos.txt (default)
+# Stage repositories defined in sources/manifests/repos.txt (default)
 pixi run ragdoll stage-repos
 
 # Stage repositories from a custom manifest into a specific target folder

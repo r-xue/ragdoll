@@ -7,7 +7,7 @@
 # 0. One-Click Multi-Source Ingestion & Repository Staging
 # ------------------------------------------------------------------------------
 # Stage/clone external repositories declared in manifest:
-# pixi run ragdoll stage-repos sources/repos/repos.txt
+# pixi run ragdoll stage-repos sources/manifests/repos.txt
 
 # Ingest all staged PDFs, Markdown specs, and repositories in one pass:
 # pixi run ragdoll ingest-all sources

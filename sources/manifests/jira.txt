@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll Jira Ingestion Manifest
+# List Jira JQL queries to fetch tickets, descriptions, and comment threads.
+# Format: [SERVER_NAME] "JQL_QUERY"
+#
+# Examples:
+# primary "project = BACKEND AND updated >= -90d"
+# "project = FRONTEND AND status in (Open, 'In Progress')"
+# ==============================================================================

@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll GitHub Issues & PRs Manifest
+# List GitHub repositories to fetch Issues, Pull Requests, and comment threads.
+# Format: <OWNER> <REPO> [STATE: all|open|closed] [SERVER_NAME]
+#
+# Examples:
+# myorg web-app all
+# myorg data-service open enterprise
+# ==============================================================================
