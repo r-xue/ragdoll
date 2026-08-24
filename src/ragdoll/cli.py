@@ -469,19 +469,45 @@ def summarize(topic: str, top_k: int | None, source: str | None) -> None:
 @cli.command()
 @click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter context by source.")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of context chunks per turn.")
-def chat(source: str | None, top_k: int | None) -> None:
+@click.option("--think/--no-think", "enable_thinking", default=None, help="Enable or disable model thinking/reasoning mode.")
+def chat(source: str | None, top_k: int | None, enable_thinking: bool | None = None) -> None:
     """Interactive RAG chat session.
 
     Type your questions and get answers grounded in your ingested data.
     Type 'quit', 'exit', or Ctrl+C to end the session.
     """
+    from ragdoll.config import settings
     from ragdoll.query.rag import chat_with_context
+    from ragdoll.store.vectordb import count
+
+    effective_top_k = top_k or settings.top_k
+    effective_thinking = settings.enable_thinking if enable_thinking is None else enable_thinking
+    thinking_str = "Enabled (Deep)" if effective_thinking else "Disabled (Fast)"
+    source_info = f" [dim](Filtered: [bold]{source}[/bold])[/dim]" if source else ""
+
+    if settings.chroma_host:
+        vector_info = f"Remote ChromaDB ({settings.chroma_host}:{settings.chroma_port})"
+    else:
+        try:
+            chunk_count = count()
+            vector_info = f"Local ChromaDB ({chunk_count:,} chunks indexed)"
+        except Exception:
+            vector_info = "Local ChromaDB"
+
+    spec_text = (
+        "[bold cyan]🧶 Ragdoll Interactive Chat[/bold cyan]\n\n"
+        "Ask questions across your ingested codebase, technical documentation, and live APIs.\n\n"
+        f"[dim]•[/dim] [bold]LLM (Chat Model):[/bold]        [green]{settings.chat_model}[/green]\n"
+        f"[dim]•[/dim] [bold]Thinking Mode:[/bold]           [cyan]{thinking_str}[/cyan]\n"
+        f"[dim]•[/dim] [bold]Embedding Model:[/bold]         [green]{settings.embed_model}[/green]\n"
+        f"[dim]•[/dim] [bold]Vector Store:[/bold]            [cyan]{vector_info}[/cyan]\n"
+        f"[dim]•[/dim] [bold]Retrieval Depth:[/bold]         [cyan]Top-K {effective_top_k} chunks[/cyan]{source_info}\n\n"
+        "Type [bold]quit[/bold] or [bold]exit[/bold] to end the session."
+    )
 
     console.print(
         Panel(
-            "[bold cyan]🧶 Ragdoll Chat[/bold cyan]\n\n"
-            "Ask questions about your ingested JIRA tickets and documents.\n"
-            "Type [bold]quit[/bold] or [bold]exit[/bold] to end the session.",
+            spec_text,
             title="Interactive RAG Chat",
             border_style="cyan",
         )
@@ -536,6 +562,7 @@ def chat(source: str | None, top_k: int | None) -> None:
                 top_k=top_k,
                 source_filter=source,
                 stream=True,
+                enable_thinking=effective_thinking,
             )
 
             full_response = ""
@@ -547,7 +574,19 @@ def chat(source: str | None, top_k: int | None) -> None:
             messages.append({"role": "assistant", "content": full_response})
 
         except Exception as e:
-            console.print(f"\n[red]Error: {e}[/red]")
+            err_str = str(e)
+            if "connection refused" in err_str.lower() or "connecterror" in err_str.lower() or "failed to establish a new connection" in err_str.lower():
+                console.print(
+                    f"\n[bold red]Connection Error:[/bold red] Could not connect to Ollama service at [cyan]{settings.ollama_host}[/cyan].\n"
+                    "[dim]👉 Hint: Is Ollama running? Try running [bold]ollama serve[/bold] or check [bold]systemctl status ollama[/bold][/dim]"
+                )
+            elif "not found" in err_str.lower() and (settings.chat_model in err_str or "model" in err_str.lower()):
+                console.print(
+                    f"\n[bold red]Model Error:[/bold red] LLM model [cyan]{settings.chat_model}[/cyan] is not installed or available in Ollama.\n"
+                    f"[dim]👉 Hint: Run [bold]ollama pull {settings.chat_model}[/bold] in your terminal to install it.[/dim]"
+                )
+            else:
+                console.print(f"\n[red]Error: {e}[/red]")
             # Remove the failed user message to keep history clean.
             messages.pop()
 
