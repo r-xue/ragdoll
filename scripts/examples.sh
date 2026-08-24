@@ -2,6 +2,14 @@
 # ==============================================================================
 # Ragdoll CLI Examples & Quick Reference
 # ==============================================================================
+# NOTE: If you are running commands from OUTSIDE the ragdoll codebase directory
+# (such as from an external data sources repository),
+# specify the path to ragdoll using pixi's -m / --manifest-path flag:
+#
+#   pixi run -m /path/to/ragdoll ragdoll <command>
+#   # Or relative path:
+#   pixi run -m ../ragdoll ragdoll ingest-all . --clone
+# ==============================================================================
 
 # ------------------------------------------------------------------------------
 # 0. One-Click Multi-Source Ingestion & Repository Staging
@@ -15,6 +23,10 @@
 # Automatically stage repositories and ingest all sources:
 # pixi run ragdoll ingest-all sources --clone
 
+# Run from an external sources repository:
+# pixi run -m ../ragdoll ragdoll ingest-all . --clone
+# pixi run --manifest-path /path/to/ragdoll ragdoll ingest-all .
+
 # ------------------------------------------------------------------------------
 # 1. Jira Ingestion (Incremental with Smart Server Targeting)
 # ------------------------------------------------------------------------------
@@ -24,6 +36,9 @@
 
 # Ingest via direct CLI URL/Token override:
 # pixi run ragdoll ingest jira --url https://jira.example.com --token "PAT" --jql "project = BACKEND"
+
+# From external workspace:
+# pixi run -m ../ragdoll ragdoll ingest jira --server primary --jql "project = BACKEND"
 
 # ------------------------------------------------------------------------------
 # 2. GitHub Issues & Pull Requests
@@ -69,6 +84,9 @@
 # Launch interactive chat session:
 # pixi run ragdoll chat
 
+# Chat with customized top_k context chunks:
+# pixi run ragdoll chat -n 5
+
 # Semantic search across all sources:
 # pixi run ragdoll search "memory allocation buffer" --source code
 # pixi run ragdoll search "authentication token refresh" --source pdf
@@ -79,8 +97,11 @@
 # Launch local Gradio Web UI:
 # pixi run ragdoll ui --port 7860
 
-# Launch MCP server over STDIO (Claude Desktop / Cursor):
+# Launch MCP server over STDIO (for Claude Desktop integration)
 # pixi run ragdoll mcp
+
+# Launch MCP server over SSE (HTTP Server-Sent Events)
+# pixi run ragdoll mcp --transport sse --port 8080
 
 # Launch OpenAI-compatible REST API:
 # pixi run ragdoll serve --host 0.0.0.0 --port 8000
