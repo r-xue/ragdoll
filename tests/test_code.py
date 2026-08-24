@@ -115,3 +115,13 @@ def test_ingest_code_filtering(tmp_path: Path):
     filtered_docs = ingest_code([tmp_path], extensions={".cpp", ".f90"})
     filtered_langs = {d.metadata["language"] for d in filtered_docs}
     assert filtered_langs == {"cpp", "fortran"}
+
+def test_extract_latex_and_markdown(tmp_path: Path):
+    (tmp_path / "paper.tex").write_text(r"\documentclass{article}\n\begin{document}\nHello LaTeX!\n\end{document}\n")
+    (tmp_path / "spec.md").write_text("# Design Spec\n\nThis is a markdown specification.\n")
+    (tmp_path / "refs.bib").write_text("@article{key,\n  title={Sample}\n}\n")
+
+    docs = ingest_code([tmp_path])
+    assert len(docs) >= 3
+    langs = {d.metadata["language"] for d in docs}
+    assert {"latex", "markdown", "bibtex"}.issubset(langs)

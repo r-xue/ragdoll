@@ -1,0 +1,9 @@
+# ==============================================================================
+# Ragdoll Repository Manifest
+# List external Git repositories to be cloned into sources/repos/ for ingestion.
+# Format: <GIT_URL> [BRANCH] [OPTIONAL_DIR_NAME]
+#
+# Examples:
+# https://github.com/myorg/core-service main
+# https://github.com/myorg/data-engine master
+# ==============================================================================

@@ -33,9 +33,15 @@ chroma/
 *.sqlite3-wal
 *.sqlite3-shm
 
-# Local input sources staging
-sources/
-sources/*
+# Local input sources staging (ignore contents, preserve scaffolding & manifest)
+sources/pdf/*
+!sources/pdf/.gitkeep
+sources/markdown/*
+!sources/markdown/.gitkeep
+sources/repos/*
+!sources/repos/.gitkeep
+!sources/repos/repos.txt
+!sources/README.md
 
 # IDE / Editor
 .vscode/
