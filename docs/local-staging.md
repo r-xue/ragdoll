@@ -40,20 +40,20 @@ sources/
    https://github.com/my-org/core-engine.git main core-engine
    https://github.com/my-org/web-ui.git
    ```
-   Then run the repository cloning script:
+   Then run the repository staging command:
    ```bash
-   ./scripts/clone_repos.sh
+   pixi run ragdoll stage-repos
    ```
    *(Alternatively, manually clone repositories directly into `sources/repos/<repo-name>`)*
 
 ### Step 2: Ingest into Vector Store
 
-Run the automated batch ingestion helper script:
+Run the built-in all-in-one ingestion command:
 ```bash
-./scripts/ingest.sh
+pixi run ragdoll ingest-all
 ```
 
-This script automatically scans:
+This command automatically scans:
 1. `sources/pdf/` and ingests all `.pdf` documents using `ragdoll ingest pdf`.
 2. `sources/markdown/` and ingests all `.md` technical notes using `ragdoll ingest code`.
 3. `sources/repos/` and performs dual ingestion on all cloned repositories (ingesting AST-parsed code structures via `ragdoll ingest code` and Git commit histories via `ragdoll ingest git`).
@@ -199,7 +199,7 @@ When indexing source code, you can ingest using the `git` ingester, the `code` i
 
 ```{tip}
 **Dual Ingestion (Recommended):**
-Running both `ragdoll ingest code <repo>` and `ragdoll ingest git <repo>` gives the LLM complete visibility — it can explain how a function works today (via `code`) and why it was modified in a recent commit (via `git`). The `./scripts/ingest.sh` script does this automatically for all repositories in `sources/repos/`.
+Running both `ragdoll ingest code <repo>` and `ragdoll ingest git <repo>` gives the LLM complete visibility — it can explain how a function works today (via `code`) and why it was modified in a recent commit (via `git`). The `pixi run ragdoll ingest-all` script does this automatically for all repositories in `sources/repos/`.
 ```
 
 ---
@@ -216,7 +216,7 @@ Running both `ragdoll ingest code <repo>` and `ragdoll ingest git <repo>` gives 
 
 3. **Incremental Ingestion & Re-indexing**:
    - Re-running ingestion commands will update the vector database with new and modified items.
-   - If switching chunking strategies or rebuilding the database from scratch, clear the vector store (`rm -rf ~/.ragdoll/data/chroma`) and re-run `./scripts/ingest.sh`.
+   - If switching chunking strategies or rebuilding the database from scratch, clear the vector store (`rm -rf ~/.ragdoll/data/chroma`) and re-run `pixi run ragdoll ingest-all`.
 
 4. **Performance for Large Repositories**:
    - For very large repositories or archives with tens of thousands of commits/files, ingest in batches or filter by recent updates (e.g., using `--jql "updated >= -30d"` for Jira).
