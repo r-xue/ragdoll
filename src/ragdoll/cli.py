@@ -53,6 +53,8 @@ def _setup_logging(verbose: bool) -> None:
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
 def cli(verbose: bool) -> None:
     """🧶 Ragdoll — local RAG over JIRA tickets & PDF documents."""
+    import faulthandler
+    faulthandler.enable()
     _setup_logging(verbose)
 
 
@@ -309,22 +311,37 @@ def ingest_git_cmd(repo_path: str, max_commits: int, all_commits: bool, no_merge
 
 
 @ingest.command("all")
-@click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=Path("sources"), required=False)
+@click.argument("path", type=click.Path(exists=False, file_okay=False, path_type=Path), default=None, required=False)
 @click.option("--clone/--no-clone", default=False, help="Clone/update repositories listed in repos/repos.txt before ingesting.")
-def ingest_all_cmd(path: Path, clone: bool) -> None:
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all data sources even if unchanged.")
+def ingest_all_cmd(path: Path | None, clone: bool, force: bool) -> None:
     """Recursively ingest all PDF documents, Markdown specs, and staged code repositories."""
-    from ragdoll.ingest.staging import ingest_all_sources
+    from ragdoll.ingest.staging import ingest_all_sources, get_working_dir
+
+    work_dir = get_working_dir()
+    if path is None or str(path) in (".", "sources"):
+        if (work_dir / "manifests").is_dir() or (work_dir / "pdf").is_dir() or (work_dir / "sources").is_dir():
+            target_path = work_dir
+        else:
+            target_path = Path("sources").resolve()
+    else:
+        target_path = Path(path)
+        if not target_path.is_absolute():
+            target_path = (work_dir / target_path).resolve()
+
     console.print(
         Panel(
-            f"🧶 [bold cyan]Ragdoll Knowledge Ingestion[/bold cyan]\\n"
-            f"Root Directory: [bold]{path.resolve()}[/bold]\\n"
-            f"Auto-stage Repositories: [bold]{clone}[/bold]",
+            f"🧶 [bold cyan]Ragdoll Knowledge Ingestion[/bold cyan]\n"
+            f"Root Directory: [bold]{target_path}[/bold]\n"
+            f"Auto-stage Repositories: [bold]{clone}[/bold]\n"
+            f"Force Re-index: [bold]{force}[/bold]",
             expand=False,
         )
     )
     try:
-        summary = ingest_all_sources(root_path=path, clone_first=clone)
+        summary = ingest_all_sources(root_path=target_path, clone_first=clone, force=force)
     except Exception as e:
+        logger.exception("Ingestion failed: %s", e)
         console.print(f"[bold red]Ingestion Error:[/bold red] {e}")
         raise click.Abort()
 
@@ -344,7 +361,7 @@ def ingest_all_cmd(path: Path, clone: bool) -> None:
         table.add_row("Bitbucket PR Discussions", str(summary["bitbucket_prs"]))
 
     console.print(table)
-    console.print("\\n✨ [bold green]Ingestion complete![/bold green] Start chatting with: [bold]pixi run ragdoll chat[/bold]")
+    console.print("\n✨ [bold green]Ingestion complete![/bold green] Start chatting with: [bold]pixi run ragdoll chat[/bold]")
 
 
 @cli.command("stage-repos")
@@ -478,7 +495,6 @@ def chat(source: str | None, top_k: int | None, enable_thinking: bool | None = N
     """
     from ragdoll.config import settings
     from ragdoll.query.rag import chat_with_context
-    from ragdoll.store.vectordb import count
 
     effective_top_k = top_k or settings.top_k
     effective_thinking = settings.enable_thinking if enable_thinking is None else enable_thinking
@@ -488,11 +504,7 @@ def chat(source: str | None, top_k: int | None, enable_thinking: bool | None = N
     if settings.chroma_host:
         vector_info = f"Remote ChromaDB ({settings.chroma_host}:{settings.chroma_port})"
     else:
-        try:
-            chunk_count = count()
-            vector_info = f"Local ChromaDB ({chunk_count:,} chunks indexed)"
-        except Exception:
-            vector_info = "Local ChromaDB"
+        vector_info = "Local ChromaDB"
 
     spec_text = (
         "[bold cyan]🧶 Ragdoll Interactive Chat[/bold cyan]\n\n"
@@ -525,8 +537,8 @@ def chat(source: str | None, top_k: int | None, enable_thinking: bool | None = N
         readline.set_history_length(500)
         try:
             readline.read_history_file(str(history_file))
-        except FileNotFoundError:
-            pass  # first run — no history yet
+        except Exception:
+            pass  # corrupt or missing history — continue cleanly
 
     def _save_history() -> None:
         if readline is not None:
@@ -663,24 +675,43 @@ def serve_chroma_cmd(host: str, port: int, data_path: str | None) -> None:
 @click.option("-f", "--force", is_flag=True, help="Skip confirmation prompt.")
 def clear_cmd(force: bool) -> None:
     """Clear the ChromaDB vector database collection."""
-    from ragdoll.store.vectordb import count, delete_collection
+    from ragdoll.store.vectordb import delete_collection
 
-    current_count = count()
-    if current_count == 0:
-        console.print("[yellow]Vector store collection is already empty.[/yellow]")
-        return
-
+    current_count = None
     if not force:
+        from ragdoll.store.safety import check_chromadb_health
+        if check_chromadb_health():
+            try:
+                from ragdoll.store.vectordb import count
+                current_count = count()
+            except Exception:
+                pass
+
+        if current_count is not None and current_count == 0:
+            console.print("[yellow]Vector store collection is already empty.[/yellow]")
+            return
+
+        count_label = f"{current_count} chunk(s)" if current_count is not None else "all data"
         confirm = click.confirm(
-            f"Are you sure you want to delete all {current_count} chunk(s) from collection '{settings.collection_name}'?",
+            f"Are you sure you want to delete {count_label} from collection '{settings.collection_name}'?",
             default=False,
         )
         if not confirm:
             console.print("[dim]Aborted.[/dim]")
             return
+    else:
+        count_label = "all data"
 
-    delete_collection()
-    console.print(f"[bold green]✓ Cleared {current_count} chunk(s) from collection '{settings.collection_name}'.[/bold green]")
+    try:
+        delete_collection()
+    except Exception as e:
+        # If ChromaDB's Rust backend segfaults on delete, fall back to purging the storage dir
+        logger.debug("delete_collection failed (%s), purging storage directory directly.", e)
+        import shutil
+        if settings.chroma_dir.exists():
+            shutil.rmtree(settings.chroma_dir, ignore_errors=True)
+            settings.ensure_dirs()
+    console.print(f"[bold green]✓ Cleared {count_label} from collection '{settings.collection_name}'.[/bold green]")
 
 
 @cli.command()

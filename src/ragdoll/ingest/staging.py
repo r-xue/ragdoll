@@ -31,12 +31,16 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
-def _get_working_dir() -> Path:
+def get_working_dir() -> Path:
     """Get the user's effective working directory, respecting pixi/npm INIT_CWD."""
     init_cwd = os.environ.get("INIT_CWD")
     if init_cwd and Path(init_cwd).is_dir():
         return Path(init_cwd).resolve()
     return Path.cwd().resolve()
+
+
+# Backward-compatible alias
+_get_working_dir = get_working_dir
 
 
 def _find_manifest(root_dir: Path, filename: str) -> Path | None:
@@ -330,6 +334,14 @@ def ingest_all_sources(
     if not root_p.is_dir():
         raise NotADirectoryError(f"Target directory does not exist: {root_p}")
 
+    # Pre-flight: detect corrupted ChromaDB before wasting time on staging/parsing.
+    from ragdoll.store.safety import check_chromadb_health, GracefulInterrupt
+    if not check_chromadb_health():
+        raise RuntimeError(
+            "ChromaDB database is corrupted. Run 'ragdoll clear --force' to reset, "
+            "then re-ingest with --force."
+        )
+
     summary = {
         "pdf_documents": 0,
         "markdown_documents": 0,
@@ -358,19 +370,22 @@ def ingest_all_sources(
 
     # 2. Ingest PDF Documents
     pdf_candidates = [root_p / "pdf", root_p / "sources" / "pdf", root_p]
-    pdf_dirs = [d for d in pdf_candidates if d.is_dir() and any(d.glob("*.pdf")) or any(d.rglob("*.pdf"))]
+    pdf_dirs = [d for d in pdf_candidates if d.is_dir() and (any(d.glob("*.pdf")) or any(d.rglob("*.pdf")))]
     if pdf_dirs:
         primary_pdf_dir = pdf_dirs[0]
         pdf_files = list(primary_pdf_dir.rglob("*.pdf"))
         if pdf_files:
             console.print(
                 f"[bold cyan][{step}][/bold cyan] Ingesting {len(pdf_files)} PDF document(s) from [bold]{primary_pdf_dir}[/bold]...")
-            count, skipped = ingest_pdfs(primary_pdf_dir, force=force)
-            if skipped > 0 and count == 0:
-                console.print(f"  ✨ All [green]{skipped}[/green] PDF(s) are already indexed and up-to-date in ChromaDB.")
-            elif skipped > 0:
-                console.print(f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
-            summary["pdf_documents"] = count
+            try:
+                count, skipped = ingest_pdfs(primary_pdf_dir, force=force)
+                if skipped > 0 and count == 0:
+                    console.print(f"  ✨ All [green]{skipped}[/green] PDF(s) are already indexed and up-to-date in ChromaDB.")
+                elif skipped > 0:
+                    console.print(f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
+                summary["pdf_documents"] = count
+            except Exception as e:
+                console.print(f"  [yellow]Warning:[/yellow] PDF ingestion encountered an issue: {e}")
             step += 1
 
     # 3. Ingest Markdown & Documentation Specifications
@@ -382,11 +397,17 @@ def ingest_all_sources(
         if md_files:
             console.print(
                 f"[bold cyan][{step}][/bold cyan] Ingesting {len(md_files)} Markdown document(s) from [bold]{primary_md_dir}[/bold]...")
-            docs = ingest_code([primary_md_dir], extensions={".md", ".markdown", ".rst", ".txt"})
-            if docs:
-                index = get_index()
-                index.insert_nodes(docs)
-                summary["markdown_documents"] = len(docs)
+            try:
+                docs = ingest_code([primary_md_dir], extensions={".md", ".markdown", ".rst", ".txt"})
+                if docs:
+                    index = get_index()
+                    with GracefulInterrupt():
+                        index.insert_nodes(docs)
+                    summary["markdown_documents"] = len(docs)
+            except KeyboardInterrupt:
+                console.print("  [yellow]⚠ Markdown ingestion interrupted safely.[/yellow]")
+            except Exception as e:
+                console.print(f"  [yellow]Warning:[/yellow] Markdown ingestion encountered an issue: {e}")
             step += 1
 
     # 4. Ingest Staged Repositories
@@ -398,20 +419,34 @@ def ingest_all_sources(
         if repo_subdirs:
             console.print(
                 f"[bold cyan][{step}][/bold cyan] Ingesting {len(repo_subdirs)} staged repository(s) from [bold]{primary_repos_dir}[/bold]...")
-            index = get_index()
             for rdir in repo_subdirs:
                 # Ingest code AST
                 console.print(f"  -> Ingesting source code AST for [bold]{rdir.name}[/bold]...")
-                cdocs = ingest_code([rdir])
-                if cdocs:
-                    index.insert_nodes(cdocs)
-                    summary["code_documents"] += len(cdocs)
+                try:
+                    cdocs = ingest_code([rdir])
+                    if cdocs:
+                        index = get_index()
+                        with GracefulInterrupt():
+                            index.insert_nodes(cdocs)
+                        summary["code_documents"] += len(cdocs)
+                except KeyboardInterrupt:
+                    console.print(f"  [yellow]⚠ Code AST ingestion for {rdir.name} interrupted safely.[/yellow]")
+                    break
+                except Exception as e:
+                    console.print(f"  [yellow]Warning:[/yellow] Code AST ingestion failed for {rdir.name}: {e}")
 
                 # Ingest git history if .git is present
                 if (rdir / ".git").is_dir():
                     console.print(f"  -> Ingesting Git commit history for [bold]{rdir.name}[/bold]...")
-                    new_commits, skipped_commits = ingest_git(str(rdir), force=force)
-                    summary["git_commits"] += new_commits
+                    try:
+                        with GracefulInterrupt():
+                            new_commits, skipped_commits = ingest_git(str(rdir), force=force)
+                        summary["git_commits"] += new_commits
+                    except KeyboardInterrupt:
+                        console.print(f"  [yellow]⚠ Git ingestion for {rdir.name} interrupted safely.[/yellow]")
+                        break
+                    except Exception as e:
+                        console.print(f"  [yellow]Warning:[/yellow] Git commit ingestion failed for {rdir.name}: {e}")
             step += 1
 
     # 5. Ingest Jira Tickets (from manifests/jira.txt)

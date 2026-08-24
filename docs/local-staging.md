@@ -50,13 +50,21 @@ sources/
 
 Run the built-in all-in-one ingestion command:
 ```bash
+# Ingest all staged sources (with incremental change detection)
 pixi run ragdoll ingest-all
+
+# Sync repositories from manifests/repos.txt first and ingest:
+pixi run ragdoll ingest-all --clone
+
+# Force re-indexing of all sources even if unmodified:
+pixi run ragdoll ingest-all --force
 ```
 
 This command automatically scans:
 1. `sources/pdf/` and ingests all `.pdf` documents using `ragdoll ingest pdf`.
 2. `sources/markdown/` and ingests all `.md` technical notes using `ragdoll ingest code`.
 3. `sources/repos/` and performs dual ingestion on all cloned repositories (ingesting AST-parsed code structures via `ragdoll ingest code` and Git commit histories via `ragdoll ingest git`).
+4. `sources/manifests/` and queries declared Jira issues, GitHub repos, and Bitbucket PRs.
 
 ### Step 3: Start Chatting
 

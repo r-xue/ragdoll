@@ -36,6 +36,8 @@ If you are running Ragdoll on an Apple Silicon Mac, consider pulling models with
 - **Architecture**: Standard Ollama models use the GGUF format powered by `llama.cpp`. The `-mlx` variants run natively via Apple's **MLX machine learning framework**, designed exclusively for Apple Silicon.
 - **Performance**: MLX models directly leverage Apple Silicon’s unified memory architecture and Metal GPU optimizations, delivering substantially faster token generation (eval rate), lower prompt-processing latency, and improved memory throughput.
 - **Platform Compatibility**: `-mlx` models run exclusively on Apple Silicon macOS (M1/M2/M3/M4). (For Linux or Windows systems with NVIDIA GPUs, use standard GGUF models).
+
+For heavy ingestion workloads and concurrent chat tuning on Apple Silicon and Linux, see [Performance & Concurrency Tuning](configuration.md#performance--concurrency-tuning).
 ```
 
 ## Installation
