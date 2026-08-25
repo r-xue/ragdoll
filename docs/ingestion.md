@@ -189,7 +189,7 @@ Ingestion is **incremental by default**; unmodified issues and PRs are automatic
 ## Source Code (Multi-Language)
 
 ```bash
-# Ingest all supported source files in a repository
+# Ingest all supported source files in a repository (incremental by default)
 pixi run ragdoll ingest code /path/to/repo
 
 # Ingest specific files or folders
@@ -197,6 +197,9 @@ pixi run ragdoll ingest code ./src/ ./include/
 
 # Ingest only specific file types (e.g. C++ and Python)
 pixi run ragdoll ingest code /path/to/repo --ext py,cpp,h,xml
+
+# Force re-indexing of all source files even if unmodified
+pixi run ragdoll ingest code /path/to/repo --force
 
 # Ingest LaTeX papers, style files, and bibliography (.tex, .sty, .bib)
 pixi run ragdoll ingest code /path/to/latex_docs
@@ -206,6 +209,10 @@ pixi run ragdoll ingest code sources/markdown
 ```
 
 Ragdoll supports 30+ source code and markup file types (Python, C/C++, CUDA, Fortran, Shell, XML, Mako, CMake, Rust, Go, TypeScript, etc.). Code files are parsed using language-aware extractors (AST, semantic block parsing, routine boundary scanners) to keep functions, classes, and subroutines intact.
+
+Code ingestion is **incremental by default**: Ragdoll calculates the SHA-256 hash of each file and checks ChromaDB before reading or parsing. Unmodified files skip AST parsing and Ollama embeddings completely, enabling subsequent runs across large codebases to complete in sub-second time.
+
+Vector embeddings are committed to ChromaDB in mini-batches with `GracefulInterrupt` protection, allowing safe `Ctrl+C` aborts in `< 1-2s` with zero risk of database corruption.
 
 Build directories (`__pycache__`, `.git`, `.venv`, `.pixi`, `build`, `dist`) and compiled binaries (`.o`, `.so`, `.a`, `.pyc`) are automatically skipped.
 

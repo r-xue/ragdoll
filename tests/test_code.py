@@ -106,13 +106,14 @@ def test_ingest_code_filtering(tmp_path: Path):
     (tmp_path / "ignore.bin").write_bytes(b"\x00\x01\x02")
 
     # Ingest all supported
-    all_docs = ingest_code([tmp_path])
+    all_docs, skipped = ingest_code([tmp_path])
     assert len(all_docs) >= 4
+    assert skipped == 0
     all_langs = {d.metadata["language"] for d in all_docs}
     assert {"python", "cpp", "fortran", "shell"}.issubset(all_langs)
 
     # Ingest with extension filter
-    filtered_docs = ingest_code([tmp_path], extensions={".cpp", ".f90"})
+    filtered_docs, _ = ingest_code([tmp_path], extensions={".cpp", ".f90"}, force=True)
     filtered_langs = {d.metadata["language"] for d in filtered_docs}
     assert filtered_langs == {"cpp", "fortran"}
 
@@ -121,8 +122,9 @@ def test_extract_latex_and_markdown(tmp_path: Path):
     (tmp_path / "spec.md").write_text("# Design Spec\n\nThis is a markdown specification.\n")
     (tmp_path / "refs.bib").write_text("@article{key,\n  title={Sample}\n}\n")
 
-    docs = ingest_code([tmp_path])
+    docs, skipped = ingest_code([tmp_path])
     assert len(docs) >= 3
+    assert skipped == 0
     langs = {d.metadata["language"] for d in docs}
     assert {"latex", "markdown", "bibtex"}.issubset(langs)
 
@@ -140,3 +142,28 @@ def clean_names(val):
     assert len(docs) >= 1
     func_doc = next(d for d in docs if d.metadata["node_type"] == "function")
     assert func_doc.metadata["name"] == "clean_names"
+
+
+def test_ingest_code_incremental(tmp_path: Path):
+    from unittest.mock import MagicMock, patch
+    from ragdoll.ingest.code import _compute_file_hash
+
+    f1 = tmp_path / "mod1.py"
+    f1.write_text("def fn1(): pass\n")
+    h1 = _compute_file_hash(f1)
+
+    f2 = tmp_path / "mod2.py"
+    f2.write_text("def fn2(): pass\n")
+
+    with patch("ragdoll.store.vectordb._get_client") as mock_client:
+        mock_col = MagicMock()
+        mock_col.get.return_value = {
+            "ids": ["code:dummy"],
+            "metadatas": [{"file_hash": h1}],
+        }
+        mock_client.return_value.get_or_create_collection.return_value = mock_col
+
+        docs, skipped = ingest_code([tmp_path])
+        assert skipped == 1
+        assert len(docs) >= 1
+        assert docs[0].metadata["name"] == "fn2"

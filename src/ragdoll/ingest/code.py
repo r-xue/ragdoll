@@ -15,6 +15,7 @@ or coherent chunk blocks for the RAG vector store.
 from __future__ import annotations
 
 import ast
+import hashlib
 import logging
 import warnings
 from pathlib import Path
@@ -518,22 +519,36 @@ def _extract_nodes(
         return _extract_generic_nodes(source, filepath, language, chunk_size, chunk_overlap)
 
 
+def _compute_file_hash(filepath: Path) -> str:
+    """Compute SHA-256 hash of file contents for incremental change detection."""
+    sha256 = hashlib.sha256()
+    try:
+        with open(filepath, "rb") as f:
+            while chunk := f.read(65536):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    except OSError:
+        return ""
+
+
 def ingest_code(
     paths: list[Path],
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
     extensions: set[str] | None = None,
-) -> list[Document]:
-    """Ingest source code files across supported languages.
+    force: bool = False,
+) -> tuple[list[Document], int]:
+    """Ingest source code files across supported languages with incremental file-hash caching.
 
     Args:
         paths (list[Path]): Files or directories to ingest.
         chunk_size (int | None): Custom chunk size for non-AST splitters.
         chunk_overlap (int | None): Custom overlap for non-AST splitters.
         extensions (set[str] | None): Optional whitelist of extensions to ingest (e.g. {'.py', '.cpp'}).
+        force (bool): If True, re-indexes all source files even if unmodified.
 
     Returns:
-        list[Document]: Extracted Documents for the RAG vector database.
+        tuple[list[Document], int]: (extracted_documents, skipped_files_count).
     """
     effective_chunk_size = chunk_size or 1500
     effective_overlap = chunk_overlap or 200
@@ -570,16 +585,53 @@ def ingest_code(
         else:
             logger.warning("Skipping invalid path: %s", p)
 
-    logger.info("Found %d source file(s) across target paths.", len(target_files))
+    if not target_files:
+        logger.info("No source files found across target paths.")
+        return ([], 0)
 
+    # 1. Query ChromaDB for existing indexed file hashes
+    indexed_hashes: set[str] = set()
+    if not force:
+        try:
+            from ragdoll.config import settings
+            from ragdoll.store.vectordb import _get_client
+
+            client = _get_client()
+            chroma_col = client.get_or_create_collection(settings.collection_name)
+            records = chroma_col.get(where={"source": "code"}, include=["metadatas"])
+            if records and records.get("metadatas"):
+                indexed_hashes = {
+                    m["file_hash"]
+                    for m in records["metadatas"]
+                    if m and "file_hash" in m
+                }
+        except Exception as e:
+            logger.debug("Could not query ChromaDB for existing code file hashes: %s", e)
+
+    # 2. Filter out unmodified files
     all_docs: list[Document] = []
+    skipped_count = 0
+
     for filepath_obj in target_files:
+        fhash = _compute_file_hash(filepath_obj)
+        if not force and fhash and fhash in indexed_hashes:
+            skipped_count += 1
+            continue
+
         source = _read_file(filepath_obj)
         if source is None or not source.strip():
             continue
 
         filepath_str = str(filepath_obj)
+        try:
+            mtime = filepath_obj.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+
         docs = _extract_nodes(source, filepath_str, effective_chunk_size, effective_overlap)
+        for doc in docs:
+            doc.metadata["file_hash"] = fhash
+            doc.metadata["mtime_ts"] = mtime
         all_docs.extend(docs)
         logger.debug("Extracted %d nodes from %s", len(docs), filepath_str)
 
@@ -594,5 +646,14 @@ def ingest_code(
             doc.id_ = f"{base_id}_{counter}"
         seen_ids.add(doc.id_)
 
-    logger.info("Extracted %d code documents from %d files.", len(all_docs), len(target_files))
-    return all_docs
+    if not all_docs and skipped_count > 0:
+        logger.info("All %d source file(s) across target paths are already up-to-date in ChromaDB.", skipped_count)
+    else:
+        logger.info(
+            "Extracted %d code documents from %d file(s) (%d up-to-date skipped).",
+            len(all_docs),
+            len(target_files) - skipped_count,
+            skipped_count,
+        )
+
+    return (all_docs, skipped_count)
