@@ -50,3 +50,57 @@ def test_build_github_document_pr():
     assert doc.id_ == "github-org-repo-101"
     assert doc.metadata["is_pr"] is True
     assert "Title: [PR-101] Add AST-based code parser" in doc.text
+
+
+def test_ingest_github_incremental():
+    from unittest.mock import patch, MagicMock
+    from ragdoll.ingest.github import ingest_github
+
+    mock_issues = [
+        {
+            "number": 1,
+            "title": "Up-to-date issue",
+            "body": "No changes",
+            "state": "open",
+            "user": {"login": "alice"},
+            "created_at": "2026-05-01T10:00:00Z",
+            "updated_at": "2026-05-01T10:00:00Z",
+            "comments": 0,
+        },
+        {
+            "number": 2,
+            "title": "New issue",
+            "body": "Brand new",
+            "state": "open",
+            "user": {"login": "bob"},
+            "created_at": "2026-05-02T10:00:00Z",
+            "updated_at": "2026-05-02T10:00:00Z",
+            "comments": 0,
+        },
+    ]
+
+    with patch("requests.Session.get") as mock_get, \
+            patch("ragdoll.ingest.github._get_client") as mock_client, \
+            patch("ragdoll.ingest.github.get_index") as mock_index:
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_issues
+        mock_resp.links = {}
+        mock_get.return_value = mock_resp
+
+        # Issue 1 is already in ChromaDB with same updated_at_ts
+        ts_1 = 1777629600.0  # 2026-05-01T10:00:00Z approx
+        mock_col = MagicMock()
+        mock_col.get.return_value = {
+            "ids": ["github-org-repo-1"],
+            "metadatas": [{"updated_at_ts": ts_1}],
+        }
+        mock_client.return_value.get_or_create_collection.return_value = mock_col
+        mock_index.return_value = MagicMock()
+
+        total, new_issues, new_prs, skipped = ingest_github("org", "repo", override_url="https://api.github.com", override_token="token")
+        assert total == 1
+        assert new_issues == 1
+        assert skipped == 1
+

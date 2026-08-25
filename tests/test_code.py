@@ -125,3 +125,18 @@ def test_extract_latex_and_markdown(tmp_path: Path):
     assert len(docs) >= 3
     langs = {d.metadata["language"] for d in docs}
     assert {"latex", "markdown", "bibtex"}.issubset(langs)
+
+
+def test_extract_python_nodes_suppresses_syntax_warnings():
+    # Source with legacy unescaped regex characters (which trigger SyntaxWarning in Python 3.12+)
+    source = r"""
+def clean_names(val):
+    field = '3,4C\*'
+    antPat = '^VA\d+$'
+    pattern = "^.+(\,.+)+$"
+    return field
+"""
+    docs = _extract_nodes(source, "src/casa_cleaner.py")
+    assert len(docs) >= 1
+    func_doc = next(d for d in docs if d.metadata["node_type"] == "function")
+    assert func_doc.metadata["name"] == "clean_names"
