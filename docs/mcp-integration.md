@@ -4,6 +4,14 @@ Ragdoll natively supports the **Model Context Protocol (MCP)**, allowing you to 
 
 When running as an MCP server, Ragdoll provides a `search_ragdoll` tool that external LLMs can use to search for context from your ingested Jira tickets, Bitbucket PRs, Git commits, Code, and PDFs.
 
+```{warning}
+**Privacy & Data Exfiltration Notice for Cloud-Hosted MCP Clients:**
+
+While the Ragdoll MCP server executes **locally on your machine**, connecting it to **cloud-hosted AI assistants** (such as Anthropic Claude Desktop, Claude Code CLI, or cloud-backed VS Code Copilot) means that any context retrieved by Ragdoll—internal source code, Jira ticket discussions, Bitbucket PR reviews, and PDF documentation—is **transmitted over the internet to the third-party AI provider's API servers** as tool call results.
+
+* **For proprietary or sensitive internal data**: Ensure your organization has an enterprise agreement with the cloud provider guaranteeing confidentiality and zero training retention, OR use Ragdoll's native terminal chat (`pixi run ragdoll chat`) which runs 100% offline using local Ollama models.
+```
+
 There are two ways to run the Ragdoll MCP Server depending on your needs.
 
 ---
