@@ -488,3 +488,23 @@ Anyone with access to the `chroma.sqlite3` database file can open it with standa
   ```
 
 * **Git Exclusion**: Verify that `.sqlite3`, `.ragdoll/`, and local data directories are always excluded in `.gitignore`.
+
+### Cloud AI Models vs. Local Offline Models (Data Privacy Boundary)
+
+Ragdoll is architected to operate in a **zero-data-leakage, 100% offline mode** when paired with local Ollama models. However, users should be aware of data privacy boundaries when connecting to external cloud services:
+
+* **Pure Local Mode (Default)**:
+  When using `ragdoll chat`, `ragdoll search`, and `ragdoll ingest` with local Ollama models, all text parsing, embeddings, vector indexing, and generative synthesis run entirely on your local machine. No queries, retrieved document chunks, code ASTs, or ticket comments are ever transmitted outside your network.
+
+* **Cloud AI Clients & MCP Integration**:
+  If you connect Ragdoll to cloud-hosted AI clients—such as **Claude Desktop / Claude Code (via MCP)**, **VS Code extensions with cloud backends**, or **Open WebUI connected to OpenAI / Anthropic APIs**:
+  - The local Ragdoll server searches your ChromaDB vector store and retrieves relevant document chunks (e.g. internal Jira discussions, proprietary source code, or private memos).
+  - These retrieved chunks are then passed as context into the prompt **transmitted over the internet to the cloud LLM provider's API**.
+
+```{warning}
+**Privacy Caveat with Cloud Model Providers:**
+
+If your organization handles sensitive, proprietary, confidential, or export-controlled information:
+1. **Do not connect Ragdoll via MCP to cloud-hosted assistants** unless your organization has an explicit enterprise data privacy agreement with the provider guaranteeing zero data retention and no model training on API inputs.
+2. **Use local Ollama models exclusively** (e.g. `qwen3.8`, `gemma4:12b`, `gpt-oss:20b`) to maintain a fully air-gapped, zero-leakage security posture.
+```

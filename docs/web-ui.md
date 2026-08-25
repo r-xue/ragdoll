@@ -43,3 +43,11 @@ pixi run ragdoll serve
 6. Click **Save**.
 
 You will now see a new model option in Open WebUI. Selecting it will route all Open WebUI messages through Ragdoll's semantic search and Ollama backend, providing you with a premium UI backed by your personal repository context.
+
+---
+
+## Security & Privacy Considerations
+
+* **Built-in Gradio UI & REST API**: Both `ragdoll ui` and `ragdoll serve` run locally and route completions through your local Ollama server by default, ensuring all queries and retrieved contexts remain 100% on-premises.
+* **Network Exposure (`0.0.0.0`)**: By default, `ragdoll serve` binds to `0.0.0.0:8000`. If your workstation is on a public or shared local network, bind specifically to localhost (`--host 127.0.0.1`) or place the server behind a firewall/reverse proxy to prevent unauthorized API queries against your vector database.
+* **Cloud Model Frontends**: If you use external web frontends configured to query public cloud model APIs, retrieved document chunks sent in chat contexts will be transmitted to those external providers.
