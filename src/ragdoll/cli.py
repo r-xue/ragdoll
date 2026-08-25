@@ -254,11 +254,13 @@ def ingest_github_cmd(
 @click.option("--ext", default=None, help="Comma-separated extensions to filter (e.g. .py,.cpp,.h,.xml).")
 @click.option("--chunk-size", type=int, default=None, help="Override chunk size.")
 @click.option("--chunk-overlap", type=int, default=None, help="Override chunk overlap.")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all source files.")
 def ingest_code(
     paths: tuple[str, ...],
     ext: str | None,
     chunk_size: int | None,
     chunk_overlap: int | None,
+    force: bool,
 ) -> None:
     """Ingest source code files or repositories (Python, C/C++, Fortran, Shell, etc.)."""
     import collections
@@ -272,31 +274,43 @@ def ingest_code(
     code_paths = [Path(p) for p in paths]
     ext_set = None
     if ext:
-        ext_set = {f".{e.strip().lstrip(".").lower()}" for e in ext.split(",") if e.strip()}
+        ext_set = {f".{e.strip().lstrip('.').lower()}" for e in ext.split(",") if e.strip()}
 
     with console.status("[bold cyan]Parsing source files across supported languages…"):
-        docs = _ingest_code(
+        res = _ingest_code(
             code_paths,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             extensions=ext_set,
+            force=force,
         )
+        docs, skipped = res if isinstance(res, tuple) else (res, 0)
 
-    if not docs:
+    if not docs and skipped == 0:
         console.print("[yellow]No source code documents extracted.[/yellow]")
+        return
+    elif not docs and skipped > 0:
+        console.print(f"  ✨ All [green]{skipped}[/green] source file(s) are already indexed and up-to-date in ChromaDB.")
         return
 
     lang_counts = collections.Counter(d.metadata.get("language", "generic") for d in docs)
     lang_summary = ", ".join(f"{lang}: {cnt}" for lang, cnt in lang_counts.most_common(5))
 
-    console.print(f"  📦 Extracted [green]{len(docs)}[/green] code unit(s) ({lang_summary})")
+    skipped_text = f" ({skipped} up-to-date skipped)" if skipped > 0 else ""
+    console.print(f"  📦 Extracted [green]{len(docs)}[/green] code unit(s){skipped_text} ({lang_summary})")
 
     from rich.progress import track
+    from ragdoll.store.safety import GracefulInterrupt
+
     console.print("\n[bold cyan]Embedding and storing chunks into ChromaDB…[/bold cyan]")
     index = get_index()
-    for doc in track(docs, description="Embedding code...", console=console):
-        index.insert(doc)
-    n = len(docs)
+    n = 0
+    with GracefulInterrupt() as gi:
+        for doc in track(docs, description="Embedding code...", console=console):
+            index.insert(doc)
+            n += 1
+            if gi.interrupted:
+                break
 
     console.print(f"  💾 Stored [green]{n}[/green] document node(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")

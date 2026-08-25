@@ -173,11 +173,18 @@ def ingest_github(
         pr_count,
         skipped_count,
     )
-    with GracefulInterrupt():
-        index = get_index()
-        index.insert_nodes(documents)
+    index = get_index()
+    batch_size = 50
+    ingested_count = 0
+    with GracefulInterrupt() as gi:
+        for i in range(0, len(documents), batch_size):
+            batch = documents[i : i + batch_size]
+            index.insert_nodes(batch)
+            ingested_count += len(batch)
+            if gi.interrupted:
+                break
 
-    return (len(documents), issue_count, pr_count, skipped_count)
+    return (ingested_count, issue_count, pr_count, skipped_count)
 
 
 def _build_github_document(issue: dict, comments: list, owner: str, repo: str) -> Document:

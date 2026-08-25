@@ -311,6 +311,8 @@ Rather than blindly splitting source files by arbitrary character counts, Ragdol
 | `name` | `str` | Name of the function, class, subroutine, or file |
 | `lineno` | `int` | Starting line number in the source file |
 | `end_lineno` | `int` | Ending line number in the source file |
+| `file_hash` | `str` | SHA-256 hash of file contents for incremental delta caching |
+| `mtime_ts` | `float` | File modification epoch timestamp |
 
 ### Automatic Ignore Rules
 
@@ -322,7 +324,7 @@ During directory traversal, the following directories and binary file extensions
 ### CLI Usage & Extension Filtering
 
 ```bash
-# Ingest all supported source files across a repository
+# Ingest all supported source files across a repository (incremental by default)
 pixi run ragdoll ingest code /path/to/repo
 
 # Ingest specific source directories
@@ -330,6 +332,9 @@ pixi run ragdoll ingest code ./src/ ./include/ ./recipes/
 
 # Filter by specific extensions (e.g. only C++ and Python)
 pixi run ragdoll ingest code /path/to/repo --ext cpp,cc,h,hpp,py
+
+# Force re-indexing of all source files even if unmodified
+pixi run ragdoll ingest code /path/to/repo --force
 
 # Ingest specific XML task recipes and Mako templates
 pixi run ragdoll ingest code ./templates/recipes/ --ext xml,mako

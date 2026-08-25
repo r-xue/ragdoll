@@ -445,12 +445,22 @@ def ingest_all_sources(
             console.print(
                 f"[bold cyan][{step}][/bold cyan] Ingesting {len(md_files)} Markdown document(s) from [bold]{primary_md_dir}[/bold]...")
             try:
-                docs = ingest_code([primary_md_dir], extensions={".md", ".markdown", ".rst", ".txt"})
-                if docs:
+                res = ingest_code([primary_md_dir], extensions={".md", ".markdown", ".rst", ".txt"}, force=force)
+                docs, skipped = res if isinstance(res, tuple) else (res, 0)
+                if skipped > 0 and not docs:
+                    console.print(f"  ✨ All [green]{skipped}[/green] Markdown document(s) are already indexed and up-to-date in ChromaDB.")
+                elif docs:
                     index = get_index()
-                    with GracefulInterrupt():
-                        index.insert_nodes(docs)
-                    summary["markdown_documents"] = len(docs)
+                    batch_size = 50
+                    with GracefulInterrupt() as gi:
+                        for i in range(0, len(docs), batch_size):
+                            batch = docs[i : i + batch_size]
+                            index.insert_nodes(batch)
+                            summary["markdown_documents"] += len(batch)
+                            if gi.interrupted:
+                                break
+                    skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+                    console.print(f"  💾 Stored [green]{len(docs)}[/green] Markdown chunk(s){skipped_text} in vector DB")
             except KeyboardInterrupt:
                 console.print("  [yellow]⚠ Markdown ingestion interrupted safely.[/yellow]")
             except Exception as e:
@@ -470,12 +480,22 @@ def ingest_all_sources(
                 # Ingest code AST
                 console.print(f"  -> Ingesting source code AST for [bold]{rdir.name}[/bold]...")
                 try:
-                    cdocs = ingest_code([rdir])
-                    if cdocs:
+                    res = ingest_code([rdir], force=force)
+                    cdocs, skipped = res if isinstance(res, tuple) else (res, 0)
+                    if skipped > 0 and not cdocs:
+                        console.print(f"  ✨ All [green]{skipped}[/green] source file(s) for [bold]{rdir.name}[/bold] are already indexed and up-to-date in ChromaDB.")
+                    elif cdocs:
                         index = get_index()
-                        with GracefulInterrupt():
-                            index.insert_nodes(cdocs)
-                        summary["code_documents"] += len(cdocs)
+                        batch_size = 50
+                        with GracefulInterrupt() as gi:
+                            for i in range(0, len(cdocs), batch_size):
+                                batch = cdocs[i : i + batch_size]
+                                index.insert_nodes(batch)
+                                summary["code_documents"] += len(batch)
+                                if gi.interrupted:
+                                    break
+                        skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+                        console.print(f"  💾 Stored [green]{len(cdocs)}[/green] code chunk(s){skipped_text} in vector DB")
                 except KeyboardInterrupt:
                     console.print(f"  [yellow]⚠ Code AST ingestion for {rdir.name} interrupted safely.[/yellow]")
                     break
