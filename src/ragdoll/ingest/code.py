@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import warnings
 from pathlib import Path
 from textwrap import dedent
 
@@ -144,7 +145,10 @@ def _should_skip_dir(dirname: str) -> bool:
 def _extract_python_nodes(source: str, filepath: str) -> list[Document]:
     """Parse a Python source file using standard library AST."""
     try:
-        tree = ast.parse(source, filename=filepath)
+        with warnings.catch_warnings():
+            # Suppress SyntaxWarning (e.g. invalid escape sequences in legacy regex literals)
+            warnings.simplefilter("ignore", category=SyntaxWarning)
+            tree = ast.parse(source, filename=filepath)
     except SyntaxError as exc:
         logger.warning("Syntax error in %s: %s — falling back to raw chunking.", filepath, exc)
         return _extract_generic_nodes(source, filepath, "python")

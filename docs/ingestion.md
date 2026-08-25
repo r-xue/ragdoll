@@ -159,9 +159,12 @@ pixi run ragdoll ingest bitbucket --server primary --project PROJ --repo backend
 
 # Ingest only open PRs
 pixi run ragdoll ingest bitbucket --server primary --project PROJ --repo backend --state OPEN
+
+# Force re-download and re-embedding of all PRs even if unmodified
+pixi run ragdoll ingest bitbucket --project PROJ --repo backend --force
 ```
 
-Bitbucket ingestion extracts PR titles, descriptions, author information, status, and full chronological discussion and review activity threads.
+Bitbucket ingestion extracts PR titles, descriptions, author information, status, and full chronological discussion and review activity threads. Ingestion is **incremental by default**; unchanged PRs are identified via ChromaDB `updated_at_ts` metadata and their `/activities` API calls and embeddings are skipped.
 
 ## GitHub Issues & Pull Requests
 
@@ -174,10 +177,14 @@ pixi run ragdoll ingest github myorg myrepo --state open
 
 # Pass an API token to prevent rate limiting
 pixi run ragdoll ingest github myorg myrepo --token YOUR_GITHUB_PAT
+
+# Force re-download and re-embedding of all items even if unmodified
+pixi run ragdoll ingest github myorg myrepo --force
 ```
 
 GitHub ingestion extracts the full discussion context: issue title, description,
 author, state (open/closed), creation date, and chronological comment threads.
+Ingestion is **incremental by default**; unmodified issues and PRs are automatically skipped without downloading comments or recomputing embeddings.
 
 ## Source Code (Multi-Language)
 

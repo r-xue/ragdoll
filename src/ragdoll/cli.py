@@ -153,6 +153,7 @@ def ingest_jira(
 @click.option("--user", default=None, help="Username (overrides config).")
 @click.option("--token", default=None, help="API token / PAT (overrides config).")
 @click.option("--auth-method", type=click.Choice(["pat", "basic"]), default=None, help="Auth method (overrides config).")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all PRs even if unchanged.")
 def ingest_bitbucket_cmd(
     project: str,
     repo: str,
@@ -162,13 +163,14 @@ def ingest_bitbucket_cmd(
     user: str | None,
     token: str | None,
     auth_method: str | None,
+    force: bool,
 ) -> None:
     """Ingest Bitbucket Server PRs and comments."""
     from ragdoll.ingest.bitbucket import ingest_bitbucket as _ingest_bitbucket
     from ragdoll.store.vectordb import count
 
     with console.status(f"[bold cyan]Fetching and embedding Bitbucket PRs from {project}/{repo}…"):
-        n = _ingest_bitbucket(
+        res = _ingest_bitbucket(
             project=project,
             repo=repo,
             state=state,
@@ -176,14 +178,23 @@ def ingest_bitbucket_cmd(
             override_url=url,
             override_user=user,
             override_token=token,
-            override_auth_method=auth_method
+            override_auth_method=auth_method,
+            force=force,
         )
+        if isinstance(res, tuple):
+            n, skipped = res
+        else:
+            n, skipped = res, 0
 
-    if n == 0:
+    if n == 0 and skipped == 0:
         console.print("[yellow]No PRs found or ingested.[/yellow]")
         return
+    elif skipped > 0 and n == 0:
+        console.print(f"  ✨ All [green]{skipped}[/green] Bitbucket PR(s) are already indexed and up-to-date in ChromaDB.")
+    else:
+        skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+        console.print(f"  💾 Stored [green]{n}[/green] chunk(s){skipped_text} in vector DB")
 
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
@@ -194,6 +205,7 @@ def ingest_bitbucket_cmd(
 @click.option("--server", default=None, help="Server config to use from settings.")
 @click.option("--url", default=None, help="Override GitHub API URL.")
 @click.option("--token", default=None, help="Override GitHub Personal Access Token.")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all Issues and PRs even if unchanged.")
 def ingest_github_cmd(
     owner: str,
     repo: str,
@@ -201,27 +213,39 @@ def ingest_github_cmd(
     server: str | None,
     url: str | None,
     token: str | None,
+    force: bool,
 ) -> None:
     """Ingest GitHub Issues and PRs (with comments)."""
     from ragdoll.ingest.github import ingest_github as _ingest_github
     from ragdoll.store.vectordb import count
 
     with console.status(f"[bold cyan]Fetching and embedding GitHub Issues/PRs from {owner}/{repo}…"):
-        n, num_issues, num_prs = _ingest_github(
+        res = _ingest_github(
             owner=owner,
             repo=repo,
             state=state,
             server=server,
             override_url=url,
             override_token=token,
+            force=force,
         )
+        if isinstance(res, tuple) and len(res) >= 4:
+            n, num_issues, num_prs, skipped = res
+        elif isinstance(res, tuple) and len(res) == 3:
+            n, num_issues, num_prs, skipped = res[0], res[1], res[2], 0
+        else:
+            n, num_issues, num_prs, skipped = 0, 0, 0, 0
 
-    if n == 0:
+    if n == 0 and skipped == 0:
         console.print("[yellow]No Issues or PRs found or ingested.[/yellow]")
         return
+    elif skipped > 0 and n == 0:
+        console.print(f"  ✨ All [green]{skipped}[/green] GitHub item(s) are already indexed and up-to-date in ChromaDB.")
+    else:
+        skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+        console.print(
+            f"  💾 Stored [green]{n}[/green] chunk(s) ([cyan]{num_issues}[/cyan] Issues, [cyan]{num_prs}[/cyan] Pull Requests){skipped_text} in vector DB")
 
-    console.print(
-        f"  💾 Stored [green]{n}[/green] chunk(s) ([cyan]{num_issues}[/cyan] Issues, [cyan]{num_prs}[/cyan] Pull Requests) in vector DB")
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 

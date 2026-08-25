@@ -67,8 +67,8 @@ def test_ingest_all_sources_directory_and_manifests(tmp_path: Path):
         assert summary["bitbucket_prs"] == 4
 
         mock_jira.assert_called_once_with(jql="project = TEST", server="primary", force=False)
-        mock_github.assert_called_once_with(owner="myorg", repo="myrepo", state="all", server=None)
-        mock_bitbucket.assert_called_once_with(project="MYPROJ", repo="myrepo", state="ALL", server=None)
+        mock_github.assert_called_once_with(owner="myorg", repo="myrepo", state="all", server=None, force=False)
+        mock_bitbucket.assert_called_once_with(project="MYPROJ", repo="myrepo", state="ALL", server=None, force=False)
 
 
 def test_stage_pdfs_download_and_cache(tmp_path: Path):

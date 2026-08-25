@@ -1,4 +1,6 @@
-"""GitHub ingestion module."""
+"""GitHub ingestion module with incremental change detection."""
+
+from __future__ import annotations
 
 import logging
 from datetime import datetime
@@ -8,7 +10,8 @@ from urllib3.util.retry import Retry
 
 from llama_index.core import Document
 from ragdoll.config import settings
-from ragdoll.store.vectordb import get_index
+from ragdoll.store.vectordb import get_index, _get_client
+from ragdoll.store.safety import GracefulInterrupt
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +26,21 @@ def ingest_github(
     server: str | None = None,
     override_url: str | None = None,
     override_token: str | None = None,
-) -> tuple[int, int, int]:
-    """Ingest GitHub Issues and PRs into the vector database.
+    force: bool = False,
+) -> tuple[int, int, int, int]:
+    """Ingest GitHub Issues and PRs into the vector database with incremental skipping.
 
     Args:
         owner (str): GitHub repository owner (user or organization).
         repo (str): Repository name.
         state (str): Issue state to filter (all, open, closed).
         server (str | None): Name of the github server config to use.
+        override_url (str | None): URL override.
+        override_token (str | None): Token override.
+        force (bool): If True, re-indexes all Issues and PRs even if unmodified.
 
     Returns:
-        tuple[int, int, int]: (total_documents, issue_count, pr_count).
+        tuple[int, int, int, int]: (total_new_documents, new_issue_count, new_pr_count, skipped_existing_count).
     """
     cfg = settings.get_github_config(server)
 
@@ -51,13 +58,22 @@ def ingest_github(
     if cfg_token:
         headers["Authorization"] = f"Bearer {cfg_token}"
 
-    logger.info("Fetching GitHub Issues/PRs from %s for %s/%s (State: %s)", cfg_url, owner, repo, state)
+    logger.info("Fetching GitHub Issues/PRs from %s for %s/%s (State: %s, force=%s)", cfg_url, owner, repo, state, force)
 
     issues_endpoint = f"{cfg_url}/repos/{owner}/{repo}/issues"
 
-    documents = []
+    chroma_col = None
+    if not force:
+        try:
+            client = _get_client()
+            chroma_col = client.get_or_create_collection(settings.collection_name)
+        except Exception as e:
+            logger.debug("Could not get ChromaDB collection for incremental GitHub check: %s", e)
+
+    documents: list[Document] = []
     issue_count = 0
     pr_count = 0
+    skipped_count = 0
 
     params = {"state": state, "per_page": 100, "page": 1}
 
@@ -85,20 +101,45 @@ def ingest_github(
             if not data:
                 break
 
-            batch_issues = 0
-            batch_prs = 0
+            # Query existing timestamps in ChromaDB for this batch
+            batch_ids = [f"github-{owner}-{repo}-{issue.get('number')}" for issue in data]
+            existing_ts_map = {}
+            if not force and chroma_col is not None:
+                try:
+                    records = chroma_col.get(ids=batch_ids, include=["metadatas"])
+                    if records and records.get("ids"):
+                        for eid, emeta in zip(records["ids"], records["metadatas"]):
+                            if emeta and "updated_at_ts" in emeta:
+                                try:
+                                    existing_ts_map[eid] = float(emeta["updated_at_ts"])
+                                except (ValueError, TypeError):
+                                    pass
+                except Exception as e:
+                    logger.debug("Could not query existing GitHub records from ChromaDB: %s", e)
 
             for issue in data:
                 issue_number = issue.get("number")
+                doc_id = f"github-{owner}-{repo}-{issue_number}"
+                updated_at_str = issue.get("updated_at")
+                updated_ts = 0.0
+                if updated_at_str:
+                    try:
+                        updated_ts = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        pass
+
+                # Skip fetching comments and embedding if unmodified in ChromaDB
+                if not force and doc_id in existing_ts_map and updated_ts > 0 and updated_ts <= existing_ts_map[doc_id]:
+                    skipped_count += 1
+                    continue
+
                 is_pr = "pull_request" in issue
                 if is_pr:
                     pr_count += 1
-                    batch_prs += 1
                 else:
                     issue_count += 1
-                    batch_issues += 1
 
-                # Fetch comments for this issue/PR
+                # Fetch comments for new or modified issue/PR
                 comments_endpoint = issue.get("comments_url")
                 comments = []
                 if comments_endpoint and issue.get("comments", 0) > 0:
@@ -112,15 +153,6 @@ def ingest_github(
                 doc = _build_github_document(issue, comments, owner, repo)
                 documents.append(doc)
 
-            logger.info(
-                "Fetched page %d with %d item(s) (%d issue(s), %d PR(s); total so far: %d)...",
-                params["page"],
-                len(data),
-                batch_issues,
-                batch_prs,
-                len(documents),
-            )
-
             # Check for Link header to see if there is a next page
             if "next" in resp.links:
                 params["page"] += 1
@@ -128,18 +160,24 @@ def ingest_github(
                 break
 
     if not documents:
+        if skipped_count > 0:
+            logger.info("All %d GitHub Issues/PRs for %s/%s are already up-to-date in ChromaDB.", skipped_count, owner, repo)
+            return (0, 0, 0, skipped_count)
         logger.warning("No Issues or PRs found for %s/%s.", owner, repo)
-        return (0, 0, 0)
+        return (0, 0, 0, 0)
 
     logger.info(
-        "Indexing %d GitHub document(s) (%d Issues, %d Pull Requests) into ChromaDB...",
+        "Indexing %d new/modified GitHub document(s) (%d Issues, %d Pull Requests; %d up-to-date skipped) into ChromaDB...",
         len(documents),
         issue_count,
         pr_count,
+        skipped_count,
     )
-    index = get_index()
-    index.insert_nodes(documents)
-    return (len(documents), issue_count, pr_count)
+    with GracefulInterrupt():
+        index = get_index()
+        index.insert_nodes(documents)
+
+    return (len(documents), issue_count, pr_count, skipped_count)
 
 
 def _build_github_document(issue: dict, comments: list, owner: str, repo: str) -> Document:

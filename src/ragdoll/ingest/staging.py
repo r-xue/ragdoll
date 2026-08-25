@@ -553,8 +553,16 @@ def ingest_all_sources(
                 if owner and repo:
                     console.print(f"  -> Ingesting GitHub [bold]{owner}/{repo}[/bold] (state: {state})...")
                     try:
-                        total_items, new_chunks, skipped = ingest_github(owner=owner, repo=repo, state=state, server=server)
-                        summary["github_items"] += new_chunks
+                        res = ingest_github(owner=owner, repo=repo, state=state, server=server, force=force)
+                        total_items = res[0] if isinstance(res, tuple) else res
+                        skipped = res[3] if isinstance(res, tuple) and len(res) >= 4 else 0
+                        summary["github_items"] += total_items
+                        if skipped > 0 and total_items == 0:
+                            console.print(
+                                f"  ✨ All [green]{skipped}[/green] GitHub item(s) are already indexed and up-to-date in ChromaDB.")
+                        elif skipped > 0:
+                            console.print(
+                                f"  💾 Stored [green]{total_items}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
                     except Exception as e:
                         console.print(f"  [yellow]Warning:[/yellow] GitHub ingestion failed for {owner}/{repo}: {e}")
         step += 1
@@ -578,8 +586,16 @@ def ingest_all_sources(
                 if project and repo:
                     console.print(f"  -> Ingesting Bitbucket PRs for [bold]{project}/{repo}[/bold] (state: {state})...")
                     try:
-                        count = ingest_bitbucket(project=project, repo=repo, state=state, server=server)
+                        res = ingest_bitbucket(project=project, repo=repo, state=state, server=server, force=force)
+                        count = res[0] if isinstance(res, tuple) else res
+                        skipped = res[1] if isinstance(res, tuple) and len(res) >= 2 else 0
                         summary["bitbucket_prs"] += count
+                        if skipped > 0 and count == 0:
+                            console.print(
+                                f"  ✨ All [green]{skipped}[/green] Bitbucket PR(s) are already indexed and up-to-date in ChromaDB.")
+                        elif skipped > 0:
+                            console.print(
+                                f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
                     except Exception as e:
                         console.print(f"  [yellow]Warning:[/yellow] Bitbucket ingestion failed for {project}/{repo}: {e}")
         step += 1

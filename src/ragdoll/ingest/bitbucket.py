@@ -1,4 +1,6 @@
-"""Bitbucket Server (Data Center) ingestion module."""
+"""Bitbucket Server (Data Center) ingestion module with incremental change detection."""
+
+from __future__ import annotations
 
 import logging
 from datetime import datetime
@@ -8,7 +10,8 @@ from urllib3.util.retry import Retry
 
 from llama_index.core import Document
 from ragdoll.config import settings
-from ragdoll.store.vectordb import get_index
+from ragdoll.store.vectordb import get_index, _get_client
+from ragdoll.store.safety import GracefulInterrupt
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +28,23 @@ def ingest_bitbucket(
     override_user: str | None = None,
     override_token: str | None = None,
     override_auth_method: str | None = None,
-) -> int:
-    """Ingest Bitbucket Server PRs into the vector database.
+    force: bool = False,
+) -> tuple[int, int]:
+    """Ingest Bitbucket Server PRs into the vector database with incremental skipping.
 
     Args:
         project (str): Bitbucket project key.
         repo (str): Repository slug.
         state (str): PR state to filter (ALL, OPEN, MERGED, DECLINED).
         server (str | None): Name of the bitbucket server config to use.
+        override_url (str | None): URL override.
+        override_user (str | None): Username override.
+        override_token (str | None): Token override.
+        override_auth_method (str | None): Auth method override.
+        force (bool): If True, re-indexes all PRs even if unmodified.
 
     Returns:
-        int: Number of documents upserted.
+        tuple[int, int]: (newly_ingested_count, skipped_existing_count)
     """
     cfg = settings.get_bitbucket_config(server)
 
@@ -46,7 +55,7 @@ def ingest_bitbucket(
 
     if not cfg_url or not cfg_token:
         logger.error("Bitbucket credentials missing in configuration.")
-        return 0
+        return (0, 0)
 
     if cfg_url.endswith("/"):
         cfg_url = cfg_url[:-1]
@@ -63,13 +72,23 @@ def ingest_bitbucket(
         headers["Authorization"] = f"Basic {auth}"
     else:
         logger.error("Invalid auth configuration for Bitbucket.")
-        return 0
+        return (0, 0)
 
-    logger.info("Fetching Bitbucket PRs from %s for %s/%s (State: %s)", cfg_url, project, repo, state)
+    logger.info("Fetching Bitbucket PRs from %s for %s/%s (State: %s, force=%s)", cfg_url, project, repo, state, force)
 
     prs_endpoint = f"{cfg_url}/rest/api/1.0/projects/{project}/repos/{repo}/pull-requests"
 
-    documents = []
+    chroma_col = None
+    if not force:
+        try:
+            client = _get_client()
+            chroma_col = client.get_or_create_collection(settings.collection_name)
+        except Exception as e:
+            logger.debug("Could not get ChromaDB collection for incremental Bitbucket check: %s", e)
+
+    documents: list[Document] = []
+    skipped_count = 0
+    total_scanned = 0
 
     params = {"state": state, "limit": 100, "start": 0}
     is_last_page = False
@@ -86,7 +105,6 @@ def ingest_bitbucket(
         session.mount("https://", adapter)
         session.headers.update(headers)
 
-        page_count = 0
         while not is_last_page:
             try:
                 resp = session.get(prs_endpoint, params=params, timeout=15)
@@ -97,10 +115,38 @@ def ingest_bitbucket(
                 break
 
             pr_batch = data.get("values", [])
+            if not pr_batch:
+                break
+
+            total_scanned += len(pr_batch)
+
+            # Query existing timestamps in ChromaDB for this batch
+            batch_ids = [f"bitbucket-{project}-{repo}-{pr.get('id')}" for pr in pr_batch]
+            existing_ts_map = {}
+            if not force and chroma_col is not None:
+                try:
+                    records = chroma_col.get(ids=batch_ids, include=["metadatas"])
+                    if records and records.get("ids"):
+                        for eid, emeta in zip(records["ids"], records["metadatas"]):
+                            if emeta and "updated_at_ts" in emeta:
+                                try:
+                                    existing_ts_map[eid] = float(emeta["updated_at_ts"])
+                                except (ValueError, TypeError):
+                                    pass
+                except Exception as e:
+                    logger.debug("Could not query existing Bitbucket records from ChromaDB: %s", e)
+
             for pr in pr_batch:
                 pr_id = pr.get("id")
+                doc_id = f"bitbucket-{project}-{repo}-{pr_id}"
+                updated_ts = float(pr.get("updatedDate", 0) / 1000)
 
-                # Fetch activities for this PR to get review comments
+                # Skip fetching /activities and embedding if unmodified in ChromaDB
+                if not force and doc_id in existing_ts_map and updated_ts > 0 and updated_ts <= existing_ts_map[doc_id]:
+                    skipped_count += 1
+                    continue
+
+                # Fetch activities for new or modified PR
                 activities_endpoint = f"{prs_endpoint}/{pr_id}/activities"
                 activities = []
                 try:
@@ -113,21 +159,23 @@ def ingest_bitbucket(
                 doc = _build_pr_document(pr, activities, project, repo)
                 documents.append(doc)
 
-            page_count += 1
-            logger.info("Fetched batch of %d PR(s) (total so far: %d)...", len(pr_batch), len(documents))
-
             is_last_page = data.get("isLastPage", True)
             if not is_last_page:
                 params["start"] = data.get("nextPageStart")
 
     if not documents:
+        if skipped_count > 0:
+            logger.info("All %d Bitbucket PR(s) for %s/%s are already up-to-date in ChromaDB.", skipped_count, project, repo)
+            return (0, skipped_count)
         logger.warning("No PRs found for %s/%s.", project, repo)
-        return 0
+        return (0, 0)
 
-    logger.info("Indexing %d Bitbucket PR document(s) into ChromaDB...", len(documents))
-    index = get_index()
-    index.insert_nodes(documents)
-    return len(documents)
+    logger.info("Indexing %d new/modified Bitbucket PR document(s) into ChromaDB (%d up-to-date skipped)...", len(documents), skipped_count)
+    with GracefulInterrupt():
+        index = get_index()
+        index.insert_nodes(documents)
+
+    return (len(documents), skipped_count)
 
 
 def _build_pr_document(pr: dict, activities: list, project: str, repo: str) -> Document:
