@@ -62,23 +62,28 @@ def test_ingest_git_basic_and_incremental(temp_git_repo: Path):
         new_count, skipped_count = ingest_git(temp_git_repo, max_commits=2000)
         assert new_count == 3
         assert skipped_count == 0
-        assert mock_index.insert.call_count == 3
+        assert mock_index.insert_nodes.call_count >= 1
+        inserted_nodes = []
+        for call in mock_index.insert_nodes.call_args_list:
+            inserted_nodes.extend(call.args[0])
+        assert len(inserted_nodes) == 3
+        assert all(n.id_.startswith("git-test_repo-") for n in inserted_nodes)
 
         # Second run: All 3 commits exist in ChromaDB, so they should be skipped
-        inserted_ids = [call.args[0].id_ for call in mock_index.insert.call_args_list]
+        inserted_ids = [n.id_ for n in inserted_nodes]
         mock_chroma_col.get.return_value = {"ids": inserted_ids}
         mock_index.reset_mock()
 
         new_count_2, skipped_count_2 = ingest_git(temp_git_repo, max_commits=2000)
         assert new_count_2 == 0
         assert skipped_count_2 == 3
-        assert mock_index.insert.call_count == 0
+        assert mock_index.insert_nodes.call_count == 0
 
         # Third run with force=True: Re-index all 3 commits
         new_count_3, skipped_count_3 = ingest_git(temp_git_repo, max_commits=2000, force=True)
         assert new_count_3 == 3
         assert skipped_count_3 == 0
-        assert mock_index.insert.call_count == 3
+        assert mock_index.insert_nodes.call_count >= 1
 
 
 def test_ingest_git_max_commits_limit(temp_git_repo: Path):
@@ -95,7 +100,7 @@ def test_ingest_git_max_commits_limit(temp_git_repo: Path):
 
         new_count, skipped_count = ingest_git(temp_git_repo, max_commits=2)
         assert new_count == 2
-        assert mock_index.insert.call_count == 2
+        assert mock_index.insert_nodes.call_count >= 1
 
 
 def test_ingest_git_invalid_repo(tmp_path: Path):

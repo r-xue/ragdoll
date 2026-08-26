@@ -589,7 +589,7 @@ def ingest_code(
         logger.info("No source files found across target paths.")
         return ([], 0)
 
-    # 1. Query ChromaDB for existing indexed file hashes
+    # 1. Query ChromaDB for existing indexed file hashes (paginated to handle large collections)
     indexed_hashes: set[str] = set()
     if not force:
         try:
@@ -598,15 +598,26 @@ def ingest_code(
 
             client = _get_client()
             chroma_col = client.get_or_create_collection(settings.collection_name)
-            records = chroma_col.get(where={"source": "code"}, include=["metadatas"])
-            if records and records.get("metadatas"):
-                indexed_hashes = {
-                    m["file_hash"]
-                    for m in records["metadatas"]
-                    if m and "file_hash" in m
-                }
+            page_size = 2000
+            offset = 0
+            while True:
+                records = chroma_col.get(
+                    where={"source": "code"},
+                    include=["metadatas"],
+                    limit=page_size,
+                    offset=offset,
+                )
+                if not records or not records.get("metadatas"):
+                    break
+                metas = records["metadatas"]
+                for m in metas:
+                    if m and "file_hash" in m:
+                        indexed_hashes.add(m["file_hash"])
+                offset += len(metas)
+                if len(metas) < page_size:
+                    break
         except Exception as e:
-            logger.debug("Could not query ChromaDB for existing code file hashes: %s", e)
+            logger.warning("Could not query ChromaDB for existing code file hashes: %s", e)
 
     # 2. Filter out unmodified files
     all_docs: list[Document] = []

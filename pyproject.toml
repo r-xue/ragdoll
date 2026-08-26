@@ -63,14 +63,18 @@ ingest-pdf = { cmd = "ragdoll ingest pdf", description = "Ingest PDF documents" 
 search = { cmd = "ragdoll search", description = "Semantic search" }
 chat = { cmd = "ragdoll chat", description = "Interactive RAG chat" }
 docs = { cmd = "sphinx-build -b html docs docs/_build/html", description = "Build Sphinx documentation" }
+test = { cmd = "pytest", description = "Run pytest unit tests" }
+test-cov = { cmd = "pytest --cov=ragdoll tests/", description = "Run pytest with coverage report" }
 
 [tool.pixi.dependencies]
 python = "3.12.*"
 gradio = "*"
 fastapi = "*"
+pytest = "*"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"

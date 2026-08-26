@@ -167,3 +167,38 @@ def test_ingest_code_incremental(tmp_path: Path):
         assert skipped == 1
         assert len(docs) >= 1
         assert docs[0].metadata["name"] == "fn2"
+
+
+def test_ingest_code_paginated_hash_lookup(tmp_path: Path):
+    from unittest.mock import MagicMock, patch
+    from ragdoll.ingest.code import _compute_file_hash
+
+    f1 = tmp_path / "mod1.py"
+    f1.write_text("def fn1(): pass\n")
+    h1 = _compute_file_hash(f1)
+
+    f2 = tmp_path / "mod2.py"
+    f2.write_text("def fn2(): pass\n")
+    h2 = _compute_file_hash(f2)
+
+    with patch("ragdoll.store.vectordb._get_client") as mock_client:
+        mock_col = MagicMock()
+        # Simulate 2 pages of results: page 1 has 2000 items, page 2 has 1 item
+        page1_metas = [{"file_hash": f"hash_{i}"} for i in range(2000)]
+        page1_metas.append({"file_hash": h1})
+        page2_metas = [{"file_hash": h2}]
+
+        def side_effect(where=None, include=None, limit=None, offset=0):
+            if offset == 0:
+                return {"metadatas": page1_metas[:2000]}
+            elif offset == 2000:
+                return {"metadatas": page1_metas[2000:] + page2_metas}
+            return {"metadatas": []}
+
+        mock_col.get.side_effect = side_effect
+        mock_client.return_value.get_or_create_collection.return_value = mock_col
+
+        docs, skipped = ingest_code([tmp_path])
+        assert skipped == 2
+        assert len(docs) == 0
+

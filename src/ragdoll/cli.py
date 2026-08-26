@@ -299,16 +299,17 @@ def ingest_code(
     skipped_text = f" ({skipped} up-to-date skipped)" if skipped > 0 else ""
     console.print(f"  📦 Extracted [green]{len(docs)}[/green] code unit(s){skipped_text} ({lang_summary})")
 
-    from rich.progress import track
     from ragdoll.store.safety import GracefulInterrupt
 
     console.print("\n[bold cyan]Embedding and storing chunks into ChromaDB…[/bold cyan]")
     index = get_index()
+    batch_size = 50
     n = 0
     with GracefulInterrupt() as gi:
-        for doc in track(docs, description="Embedding code...", console=console):
-            index.insert(doc)
-            n += 1
+        for i in range(0, len(docs), batch_size):
+            batch = docs[i : i + batch_size]
+            index.insert_nodes(batch)
+            n += len(batch)
             if gi.interrupted:
                 break
 
