@@ -182,11 +182,14 @@ def ingest_git(
         TimeRemainingColumn,
     )
     from rich.console import Console
+    from ragdoll.store.safety import GracefulInterrupt
 
     console = Console()
     index = get_index()
+    batch_embed_size = 64
+    batch_ranges = list(range(0, len(new_docs), batch_embed_size))
 
-    with Progress(
+    with GracefulInterrupt() as gi, Progress(
         TextColumn("[bold cyan]{task.description}"),
         BarColumn(bar_width=35),
         TaskProgressColumn(),
@@ -196,9 +199,12 @@ def ingest_git(
         transient=False,
     ) as progress:
         task = progress.add_task("Embedding git commits...", total=len(new_docs))
-        for doc in new_docs:
-            index.insert(doc)
-            progress.advance(task)
+        for i in batch_ranges:
+            batch_docs = new_docs[i : i + batch_embed_size]
+            index.insert_nodes(batch_docs)
+            progress.advance(task, advance=len(batch_docs))
+            if gi.interrupted:
+                break
 
     logger.info("Successfully indexed %d new git commits.", len(new_docs))
     return (len(new_docs), skipped_count)

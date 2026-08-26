@@ -78,12 +78,19 @@ def ingest_pdfs(
     indexed_files: dict[str, set[str]] = {}
     if not force:
         try:
-            records = chroma_col.get(
-                where={"source": "pdf"},
-                include=["metadatas"],
-            )
-            if records and records.get("metadatas"):
-                for meta in records["metadatas"]:
+            page_size = 2000
+            offset = 0
+            while True:
+                records = chroma_col.get(
+                    where={"source": "pdf"},
+                    include=["metadatas"],
+                    limit=page_size,
+                    offset=offset,
+                )
+                if not records or not records.get("metadatas"):
+                    break
+                metas = records["metadatas"]
+                for meta in metas:
                     if not meta:
                         continue
                     fpath = meta.get("file_path")
@@ -93,6 +100,9 @@ def ingest_pdfs(
                             indexed_files[fpath] = set()
                         if fhash:
                             indexed_files[fpath].add(fhash)
+                offset += len(metas)
+                if len(metas) < page_size:
+                    break
         except Exception as e:
             logger.debug("ChromaDB PDF metadata lookup notice: %s", e)
 
@@ -139,7 +149,8 @@ def ingest_pdfs(
             )
             docs = reader.load_data()
             mtime = pdf_path.stat().st_mtime
-            for doc in docs:
+            for i, doc in enumerate(docs, 1):
+                doc.id_ = f"pdf:{pdf_path.resolve()}::page_{i}"
                 doc.metadata["source"] = "pdf"
                 doc.metadata["file_path"] = str(pdf_path.resolve())
                 doc.metadata["file_name"] = pdf_path.name
@@ -161,6 +172,9 @@ def ingest_pdfs(
     from ragdoll.store.safety import GracefulInterrupt
 
     ingested = 0
+    batch_embed_size = 50
+    batch_ranges = list(range(0, len(all_documents), batch_embed_size))
+
     try:
         index = get_index()
         with GracefulInterrupt() as gi, Progress(
@@ -173,10 +187,11 @@ def ingest_pdfs(
             transient=False,
         ) as progress:
             task = progress.add_task("Embedding PDFs...", total=len(all_documents))
-            for doc in all_documents:
-                index.insert(doc)
-                ingested += 1
-                progress.advance(task)
+            for i in batch_ranges:
+                batch_docs = all_documents[i : i + batch_embed_size]
+                index.insert_nodes(batch_docs)
+                ingested += len(batch_docs)
+                progress.advance(task, advance=len(batch_docs))
                 if gi.interrupted:
                     break
     except KeyboardInterrupt:
