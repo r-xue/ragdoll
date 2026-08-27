@@ -39,8 +39,8 @@ You can declaratively stage and update external Git repositories for code and hi
 ```text
 # Format: <GIT_URL> [BRANCH] [OPTIONAL_DIR_NAME] [COMMITS_LIMIT]
 # COMMITS_LIMIT can be 'all' / 'full' or an integer (e.g. 5000). Defaults to 2000.
-https://open-bitbucket.nrao.edu/scm/pipe/pipeline.git master pipeline all
-https://open-bitbucket.nrao.edu/scm/casa/casa6.git master casa6 all
+https://github.com/myorg/backend-service.git main backend-service all
+https://bitbucket.example.com/scm/core/data-pipeline.git master data-pipeline 5000
 ```
 
 ```bash

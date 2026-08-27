@@ -76,15 +76,42 @@ Intent:"""
 
 JQL_GENERATOR_PROMPT = """\
 You are an expert Atlassian JIRA administrator.
-Convert the user's natural language request into a valid JQL (Jira Query Language) string.
+Convert the user's natural language request into a valid, high-recall JQL (Jira Query Language) string.
 Return ONLY the raw JQL string, nothing else. No markdown formatting, no explanations.
 
 Important Rules:
-- JIRA project keys are uppercase short alphanumeric identifiers (e.g. MYPROJ, CORE, PROJA, MAIN).
-- Do NOT include organization or server names (e.g. "myorg", "enterprise", "company", "jira") inside the project key.
-- Example: "tickets in the myorg MYPROJ project" -> project = MYPROJ
-- Example: "how many tickets in enterprise PROJA" -> project = PROJA
-- Example: "open bugs in CORE" -> project = CORE AND statusCategory != Done AND type = Bug
+1. Project Keys:
+   - JIRA project keys are uppercase short alphanumeric identifiers (e.g. PROJ, APP, CORE, SVC, AUTH).
+   - Do NOT include organization, system, or server names (e.g. "myorg", "enterprise", "jira", "company") in the project key.
+   - If no project is specified, do NOT add a project clause unless explicitly mentioned.
+
+2. Full-Text Search vs Field Search:
+   - Use `text ~ "..."` (the composite full-text index across summary, description, comments, and environment) for general topic/concept searches.
+   - Do NOT restrict search to only `summary ~ "..."` or `description ~ "..."` unless the user explicitly asks for "in title", "in summary", or "in description".
+
+3. Multi-Concept Separation & High Recall:
+   - Do NOT combine multiple distinct terms into a single exact quoted phrase (e.g. avoid `text ~ "weblog input parameters"` because Jira requires exact phrase sequencing).
+   - Separate distinct concepts using `AND` across `text` or `labels` clauses.
+e   - Example: "weblog input parameters" -> (text ~ "weblog" OR labels in ("weblog", weblog) OR component in ("weblog", "Weblog")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
+
+4. Subsystems, Modules & Labels:
+   - When searching for a module or subsystem topic (e.g. weblog, cache, auth, billing, ui), search both `text` AND `labels` / `component` where applicable:
+   - Example: "tickets about auth" -> (text ~ "auth" OR labels = "auth" OR component in ("auth", "Auth"))
+
+5. Avoid Auxiliary & Structural Term Overfitting:
+   - Do NOT add generic structural or question terms (such as "section", "part", "page", "tab", "list", "tickets", "issues", "about") as strict `AND text ~ "..."` constraints. Focus on the core domain keywords.
+
+6. Status & Activity Filters:
+   - "active", "open", "unresolved", "in progress", "pending", "not done" -> statusCategory != Done
+   - "closed", "resolved", "done", "completed" -> statusCategory = Done
+   - "assigned to X" -> assignee = "X"
+   - "reported by X" -> reporter = "X"
+
+Examples:
+- "list all active tickets about weblog input parameters section" -> statusCategory != Done AND (text ~ "weblog" OR labels in (weblog, "weblog") OR component in (weblog, "weblog")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
+- "open bugs in PROJ about database connection" -> project = PROJ AND statusCategory != Done AND type = Bug AND (text ~ "database" OR labels = "database") AND text ~ "connection"
+- "tickets assigned to jdoe in APP" -> project = APP AND assignee = "jdoe"
+- "unresolved issues for cache memory leak" -> statusCategory != Done AND (text ~ "cache" OR component = "cache") AND text ~ "memory leak"
 
 User Request: {question}
 JQL:"""
@@ -311,8 +338,23 @@ def query_live_jira(jql: str) -> str:
                     priority = issue.fields.priority.name if getattr(issue.fields, "priority", None) else "None"
                     assignee = issue.fields.assignee.displayName if getattr(issue.fields, "assignee", None) else "Unassigned"
                     updated = getattr(issue.fields, "updated", "Unknown Date")
+
+                    # Extract labels and components if present
+                    labels = getattr(issue.fields, "labels", []) or []
+                    labels_str = f" | Labels: {', '.join(labels)}" if labels else ""
+
+                    raw_components = getattr(issue.fields, "components", []) or []
+                    comp_names = [c.name if hasattr(c, "name") else str(c) for c in raw_components]
+                    comp_str = f" | Components: {', '.join(comp_names)}" if comp_names else ""
+
+                    # Extract concise description preview (first 200 chars)
+                    raw_desc = getattr(issue.fields, "description", None) or ""
+                    desc_clean = " ".join(raw_desc.split())[:200]
+                    desc_str = f" | Description: {desc_clean}..." if desc_clean else ""
+
                     all_results.append(
-                        f"- {key} [{issue_type} | Priority: {priority}] ({status}): {summary} | Assignee: {assignee} | Updated: {updated}")
+                        f"- {key} [{issue_type} | Priority: {priority}] ({status}): {summary}{comp_str}{labels_str}{desc_str} | Assignee: {assignee} | Updated: {updated}"
+                    )
             else:
                 all_results.append(f"### Results from {cfg['name']} ({server_url}):\nFound 0 matching tickets.")
         except Exception as e:
@@ -601,7 +643,27 @@ def chat_with_context(
                 logger.info("Generated JQL: %s", jql)
 
                 live_results = query_live_jira(jql)
-                system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+
+                # Hybrid Retrieval: Enrich live API results with semantic vector search over indexed Jira tickets
+                try:
+                    vector_results = search(search_query, top_k=top_k or 8, source_filter="jira")
+                    live_keys = set(re.findall(r"\b([A-Z]{2,10}-\d+)\b", live_results))
+                    additional_docs = [
+                        r for r in vector_results
+                        if r.metadata.get("key") and r.metadata.get("key") not in live_keys
+                    ]
+
+                    context_blocks = [f"--- LIVE DATABASE RESULTS ---\n{live_results}"]
+                    if additional_docs:
+                        sem_context = _format_context(additional_docs)
+                        context_blocks.append(
+                            f"--- ADDITIONAL RELEVANT TICKETS (FROM INDEXED VECTOR DB) ---\n{sem_context}"
+                        )
+                    context_blocks.append("--- END RESULTS ---")
+                    system_content = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_blocks)
+                except Exception as e:
+                    logger.debug("Hybrid semantic retrieval notice: %s", e)
+                    system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
                 logger.error("JQL Generation failed: %s", e)
                 system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live database.)"

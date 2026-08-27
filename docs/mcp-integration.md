@@ -103,6 +103,6 @@ If your IDE or AI client supports SSE via a standard `mcp_config.json`, you can 
 
 Once your AI client is connected to Ragdoll, you don't need to learn any specific syntax. You can simply chat with your AI and ask natural language questions:
 
-> *"Search Ragdoll for the latest Jira tickets related to the ALMA pipeline calibration bugs."*
+> *"Search Ragdoll for the latest Jira tickets related to the authentication service bugs."*
 
 The AI will recognize the `search_ragdoll` tool, send the query, and use the results returned from your local ChromaDB to answer your question.

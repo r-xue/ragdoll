@@ -66,8 +66,8 @@ pixi run ragdoll ingest pdf ./docs/technical_handbook.pdf
 pixi run ragdoll ingest pdf ./reports/
 
 # Ingest JIRA issues via JQL
-pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
-pixi run ragdoll ingest jira --jql "project = PIPE AND updated >= -60d" --max-results 100
+pixi run ragdoll ingest jira --jql "project = CORE AND updated >= -30d"
+pixi run ragdoll ingest jira --jql "project = AUTH AND updated >= -60d" --max-results 100
 
 # Ingest from a different JIRA instance (multi-site)
 pixi run ragdoll ingest jira \
@@ -95,7 +95,7 @@ To clear your database and start fresh:
 rm -rf ~/.ragdoll/data/chroma
 
 # Re-run your ingestion commands
-pixi run ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
+pixi run ragdoll ingest jira --jql "project = CORE AND updated >= -30d"
 pixi run ragdoll ingest pdf ./docs/
 ```
 
