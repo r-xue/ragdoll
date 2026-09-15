@@ -1,0 +1,16 @@
+# ==============================================================================
+# Ragdoll Confluence Wiki Ingestion Manifest
+# List Confluence spaces or CQL queries to fetch documentation & wiki pages.
+# Format: <SPACE_KEY> [CQL_FILTER] [SERVER_NAME]
+#   or:   "CQL_QUERY" [SERVER_NAME]
+# Note: [SERVER_NAME] is optional if the space is listed in `spaces` of a
+#       confluence_servers profile in ~/.ragdoll/config.toml, or if only one server is configured.
+#
+# Examples:
+# CORE
+# PROJ "type = page"
+# APP "type = page AND label in ('architecture', 'manual')"
+# DOCS - enterprise
+# "space in (CORE, APP) AND type = page AND lastModified >= -90d"
+# ==============================================================================
+

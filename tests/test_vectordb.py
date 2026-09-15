@@ -30,3 +30,41 @@ def test_remote_chroma_client(monkeypatch):
             database="default_database",
         )
         assert client == mock_http_client.return_value
+
+
+def test_ragdoll_chroma_vector_store_upsert(tmp_path):
+    import chromadb
+    from llama_index.core.schema import TextNode
+    from ragdoll.store.vectordb import RagdollChromaVectorStore
+
+    client = chromadb.PersistentClient(path=str(tmp_path))
+    collection = client.get_or_create_collection(name="test_collection")
+    store = RagdollChromaVectorStore(chroma_collection=collection)
+
+    node1 = TextNode(
+        id_="issue-1",
+        text="Initial summary text",
+        metadata={"updated_at_ts": 1000.0, "status": "Open"},
+        embedding=[0.1] * 384,
+    )
+    store.add([node1])
+
+    records = collection.get(ids=["issue-1"], include=["documents", "metadatas"])
+    assert records["ids"] == ["issue-1"]
+    assert records["documents"][0] == "Initial summary text"
+    assert records["metadatas"][0]["updated_at_ts"] == 1000.0
+    assert records["metadatas"][0]["status"] == "Open"
+
+    node1_updated = TextNode(
+        id_="issue-1",
+        text="Updated summary text with new resolution",
+        metadata={"updated_at_ts": 2000.0, "status": "Resolved"},
+        embedding=[0.9] * 384,
+    )
+    store.add([node1_updated])
+
+    records_after = collection.get(ids=["issue-1"], include=["documents", "metadatas"])
+    assert len(records_after["ids"]) == 1
+    assert records_after["documents"][0] == "Updated summary text with new resolution"
+    assert records_after["metadatas"][0]["updated_at_ts"] == 2000.0
+    assert records_after["metadatas"][0]["status"] == "Resolved"

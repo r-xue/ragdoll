@@ -27,11 +27,37 @@ def test_jira_server_projects_config():
         }
     )
     pri_cfg = s.get_jira_config("primary")
+    assert pri_cfg["server_name"] == "primary"
     assert pri_cfg["projects"] == ["PROJA", "PROJB"]
     assert pri_cfg["url"] == "https://jira.primary.example.com"
 
     sec_cfg = s.get_jira_config("secondary")
+    assert sec_cfg["server_name"] == "secondary"
     assert sec_cfg["projects"] == ["EXTA", "EXTB"]
+
+    # Test auto-routing by project key
+    proj_cfg = s.get_jira_config(project="PROJB")
+    assert proj_cfg["server_name"] == "primary"
+
+    proj2_cfg = s.get_jira_config(project="exta")
+    assert proj2_cfg["server_name"] == "secondary"
+
+
+def test_jira_single_server_fallback(monkeypatch, tmp_path):
+    monkeypatch.setattr("ragdoll.config._USER_CONFIG", tmp_path / "nonexistent.toml")
+    s = Settings(
+        jira_token="",
+        jira_servers={
+            "internal": {
+                "url": "https://jira.internal.example.com",
+                "token": "secret",
+                "projects": ["CORE"],
+            }
+        }
+    )
+    cfg = s.get_jira_config()
+    assert cfg["server_name"] == "internal"
+    assert cfg["url"] == "https://jira.internal.example.com"
 
 
 def test_github_server_config():

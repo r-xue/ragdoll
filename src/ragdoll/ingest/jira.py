@@ -153,8 +153,13 @@ def _build_jira_document(issue, server_tag: str = "default") -> Document:
     else:
         metadata["labels"] = ""
 
-    doc = Document(text=full_text, metadata=metadata)
-    doc.doc_id = f"jira-{server_tag}-{issue.key}"
+    issue_key = str(issue.key).strip().upper()
+    doc_id = f"jira-{server_tag}-{issue_key}"
+    metadata["doc_id"] = doc_id
+    metadata["key"] = issue_key
+    metadata["server"] = server_tag
+
+    doc = Document(text=full_text, metadata=metadata, id_=doc_id)
     return doc
 
 
@@ -181,15 +186,34 @@ def ingest_jira(
     Phase 3 (Vector Embedding):
         Embeds and indexes documents in batches via LlamaIndex and Ollama.
     """
+    import re
+    import urllib.parse
     import dateutil.parser
 
-    cfg = settings.get_jira_config(server)
-    server_tag = server or "default"
+    project_match = re.search(r'project\s*(?:=|\bin\b)\s*[\'\"\(]?\s*([A-Za-z0-9_]+)', jql, re.IGNORECASE)
+    project_hint = project_match.group(1) if project_match else None
+
+    cfg = settings.get_jira_config(server, project=project_hint)
+    server_tag = (server or cfg.get("server_name") or "").strip().lower()
 
     cfg_url = override_url or cfg["url"]
     cfg_user = override_user or cfg["user"]
     cfg_token = override_token or cfg["token"]
     cfg_auth = override_auth_method or cfg["auth_method"]
+
+    # Fall back to URL hostname if server_tag is unresolved or default
+    if not server_tag or server_tag == "default":
+        if cfg_url and cfg_url != "https://jira.example.com":
+            for sname, scfg in settings.jira_servers.items():
+                if scfg.get("url") and scfg["url"].rstrip("/").lower() == cfg_url.rstrip("/").lower():
+                    server_tag = sname.lower()
+                    break
+        if not server_tag or server_tag == "default":
+            if cfg_url and cfg_url != "https://jira.example.com":
+                netloc = urllib.parse.urlparse(cfg_url).netloc
+                server_tag = netloc.split(":")[0].lower() if netloc else "default"
+            else:
+                server_tag = "default"
 
     if not cfg_url or not cfg_token or not cfg_user:
         logger.error("JIRA credentials missing in configuration.")
@@ -252,7 +276,7 @@ def ingest_jira(
             total_scanned += len(raw_batch)
 
             # Query existing timestamps in bulk from ChromaDB for this batch
-            batch_ids = [f"jira-{server_tag}-{issue.key}" for issue in raw_batch]
+            batch_ids = [f"jira-{server_tag}-{str(issue.key).strip().upper()}" for issue in raw_batch]
             existing_ts_map = {}
             if not force:
                 try:
@@ -269,7 +293,7 @@ def ingest_jira(
 
             # Compare timestamps to find new/modified issues
             for issue in raw_batch:
-                doc_id = f"jira-{server_tag}-{issue.key}"
+                doc_id = f"jira-{server_tag}-{str(issue.key).strip().upper()}"
                 updated_str = getattr(issue.fields, "updated", "") or ""
                 jira_ts = 0.0
                 if updated_str:
@@ -363,25 +387,34 @@ def ingest_jira(
         TimeRemainingColumn,
     )
     from rich.console import Console
+    from ragdoll.store.safety import GracefulInterrupt
 
     console = Console()
     index = get_index()
     batch_embed_size = 64
     batch_ranges = list(range(0, len(documents), batch_embed_size))
-    with Progress(
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=35),
-        TaskProgressColumn(),
-        MofNCompleteColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=False,
-    ) as progress:
-        task = progress.add_task("Embedding JIRA issues...", total=len(documents))
-        for i in batch_ranges:
-            batch_docs = documents[i: i + batch_embed_size]
-            index.insert_nodes(batch_docs)
-            progress.advance(task, advance=len(batch_docs))
+    with GracefulInterrupt() as gi:
+        with Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=35),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            task = progress.add_task("Embedding JIRA issues...", total=len(documents))
+            for i in batch_ranges:
+                batch_docs = documents[i: i + batch_embed_size]
+                try:
+                    chroma_col.delete(ids=[d.id_ for d in batch_docs])
+                except Exception as e:
+                    logger.debug("Failed to purge stale ChromaDB records: %s", e)
+                index.insert_nodes(batch_docs)
+                progress.advance(task, advance=len(batch_docs))
+                if gi.interrupted:
+                    logger.warning("JIRA embedding interrupted; safely committed %d issues.", min(i + len(batch_docs), len(documents)))
+                    break
 
     logger.info("Successfully ingested %d JIRA issues into vector DB.", len(documents))
     return len(documents)

@@ -249,6 +249,62 @@ def ingest_github_cmd(
     console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
+@ingest.command("confluence")
+@click.option("--space", default=None, help="Confluence space key (e.g. CORE, DOCS, DEV).")
+@click.option("--cql", default=None, help="Confluence Query Language (CQL) filter expression.")
+@click.option("--server", default=None, help="Name of the Confluence server profile in config.")
+@click.option("--url", default=None, help="Override Confluence instance URL.")
+@click.option("--token", default=None, help="Override Confluence access token.")
+@click.option("--user", default=None, help="Override Confluence username (for basic auth).")
+@click.option("--auth-method", type=click.Choice(["pat", "basic"]), default=None, help="Override auth method.")
+@click.option("--max-results", type=int, default=None, help="Limit total pages to ingest.")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force re-indexing of all pages.")
+def ingest_confluence_cmd(
+    space: str | None,
+    cql: str | None,
+    server: str | None,
+    url: str | None,
+    token: str | None,
+    user: str | None,
+    auth_method: str | None,
+    max_results: int | None,
+    force: bool,
+) -> None:
+    """Ingest Confluence documentation & wiki pages."""
+    if not space and not cql:
+        console.print("[bold red]Error:[/bold red] Please specify at least --space or --cql.")
+        raise click.Abort()
+
+    from ragdoll.ingest.confluence import ingest_confluence as _ingest_confluence
+    from ragdoll.store.vectordb import count
+
+    target_desc = f"space '{space}'" if space else f"CQL '{cql}'"
+    with console.status(f"[bold cyan]Fetching and embedding Confluence pages for {target_desc}…"):
+        count_ingested, skipped = _ingest_confluence(
+            space=space,
+            cql=cql,
+            server=server,
+            override_url=url,
+            override_user=user,
+            override_token=token,
+            override_auth_method=auth_method,
+            max_results=max_results,
+            force=force,
+        )
+
+    if count_ingested == 0 and skipped == 0:
+        console.print("[yellow]No Confluence pages found or ingested.[/yellow]")
+        return
+    elif skipped > 0 and count_ingested == 0:
+        console.print(f"  ✨ All [green]{skipped}[/green] Confluence page(s) are already indexed and up-to-date in ChromaDB.")
+    else:
+        skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+        console.print(
+            f"  💾 Stored [green]{count_ingested}[/green] Confluence page(s){skipped_text} in vector DB")
+
+    console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+
+
 @ingest.command("code")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option("--ext", default=None, help="Comma-separated extensions to filter (e.g. .py,.cpp,.h,.xml).")
@@ -307,7 +363,7 @@ def ingest_code(
     n = 0
     with GracefulInterrupt() as gi:
         for i in range(0, len(docs), batch_size):
-            batch = docs[i : i + batch_size]
+            batch = docs[i: i + batch_size]
             index.insert_nodes(batch)
             n += len(batch)
             if gi.interrupted:
@@ -401,6 +457,8 @@ def ingest_all_cmd(path: Path | None, clone: bool, force: bool, all_commits: boo
         table.add_row("GitHub Issues & PRs", str(summary["github_items"]))
     if summary.get("bitbucket_prs", 0) > 0:
         table.add_row("Bitbucket PR Discussions", str(summary["bitbucket_prs"]))
+    if summary.get("confluence_pages", 0) > 0:
+        table.add_row("Confluence Wiki Pages", str(summary["confluence_pages"]))
 
     console.print(table)
     console.print("\n✨ [bold green]Ingestion complete![/bold green] Start chatting with: [bold]pixi run ragdoll chat[/bold]")
@@ -473,7 +531,7 @@ cli.add_command(ingest_all_cmd, name="ingest-all")
 @cli.command()
 @click.argument("query")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of results.")
-@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter by source.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git", "confluence"]), default=None, help="Filter by source.")
 def search(query: str, top_k: int | None, source: str | None) -> None:
     """Semantic search over ingested documents."""
     from ragdoll.query.retriever import search as _search
@@ -505,7 +563,7 @@ def search(query: str, top_k: int | None, source: str | None) -> None:
 @cli.command()
 @click.argument("topic")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of context chunks.")
-@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter by source.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git", "confluence"]), default=None, help="Filter by source.")
 def summarize(topic: str, top_k: int | None, source: str | None) -> None:
     """Summarize information about a topic from ingested data."""
     from ragdoll.query.rag import summarize as _summarize
@@ -526,15 +584,18 @@ def summarize(topic: str, top_k: int | None, source: str | None) -> None:
 # ── Chat command ───────────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git"]), default=None, help="Filter context by source.")
+@click.option("-v", "--verbose", is_flag=True, default=False, help="Enable debug logging.")
+@click.option("--source", type=click.Choice(["pdf", "jira", "bitbucket", "github", "code", "git", "confluence"]), default=None, help="Filter context by source.")
 @click.option("-n", "--top-k", type=int, default=None, help="Number of context chunks per turn.")
 @click.option("--think/--no-think", "enable_thinking", default=None, help="Enable or disable model thinking/reasoning mode.")
-def chat(source: str | None, top_k: int | None, enable_thinking: bool | None = None) -> None:
+def chat(verbose: bool, source: str | None, top_k: int | None, enable_thinking: bool | None = None) -> None:
     """Interactive RAG chat session.
 
     Type your questions and get answers grounded in your ingested data.
     Type 'quit', 'exit', or Ctrl+C to end the session.
     """
+    if verbose:
+        _setup_logging(True)
     from ragdoll.config import settings
     from ragdoll.query.rag import chat_with_context
 

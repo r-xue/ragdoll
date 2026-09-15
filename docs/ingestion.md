@@ -1,6 +1,6 @@
 # Ingesting Data
 
-Ragdoll supports multiple data sources (PDF, JIRA, Bitbucket, GitHub, Git, and Python code). Each ingestion pipeline extracts text,
+Ragdoll supports multiple data sources (PDF, JIRA, Confluence, Bitbucket, GitHub, Git, and Source Code). Each ingestion pipeline extracts text,
 chunks it, computes embeddings via Ollama, and stores them in ChromaDB.
 
 ```{tip}
@@ -185,6 +185,39 @@ pixi run ragdoll ingest github myorg myrepo --force
 GitHub ingestion extracts the full discussion context: issue title, description,
 author, state (open/closed), creation date, and chronological comment threads.
 Ingestion is **incremental by default**; unmodified issues and PRs are automatically skipped without downloading comments or recomputing embeddings.
+
+## Confluence Documentation & Wiki Pages
+
+Ragdoll supports ingesting documentation, guides, and engineering specifications directly from Atlassian Confluence (Server, Data Center, and Cloud).
+
+```bash
+# Ingest an entire Confluence space (incremental by default)
+pixi run ragdoll ingest confluence --space CORE
+
+# Ingest using Confluence Query Language (CQL)
+pixi run ragdoll ingest confluence --cql "space = CORE AND type = page AND label in ('architecture', 'manual')"
+
+# Limit total pages ingested
+pixi run ragdoll ingest confluence --space CORE --max-results 100
+
+# Use a named server profile from ~/.ragdoll/config.toml
+pixi run ragdoll ingest confluence --server enterprise --space PROJ
+
+# Override credentials and URL directly
+pixi run ragdoll ingest confluence --url https://wiki.example.com --token MY_PAT --space CORE
+
+# Force re-indexing of all pages
+pixi run ragdoll ingest confluence --space CORE --force
+```
+
+Confluence ingestion parses raw storage XHTML into clean, readable Markdown (converting headings, tables, code macros, notes, and bullet points) and indexes them into ChromaDB. Ingestion uses a **two-phase incremental scan**: it first checks page version numbers and modification timestamps against ChromaDB metadata, completely skipping unmodified pages without downloading full page bodies.
+
+### Key Capabilities
+
+* **Smart Space Routing**: If `--server` is omitted, Ragdoll automatically routes to the appropriate server configured with that space in `~/.ragdoll/config.toml` (or defaults to the sole configured server).
+* **Space Name Auto-Resolution**: Passing human names like `--space "Team Engineering"` automatically resolves to the server's internal space key (e.g. `ENG`).
+* **Guaranteed Space Scoping**: Queries specifying `--space` automatically scope CQL filters (`space = "KEY" AND (...)`) with client-side boundary enforcement to prevent cross-space page leakage.
+* **Declarative Manifests**: Declare spaces in `manifests/confluence.txt` (e.g. `ENG "type = page"`) for automated multi-source synchronization via `ragdoll ingest-all`.
 
 ## Source Code (Multi-Language)
 
