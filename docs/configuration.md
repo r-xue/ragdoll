@@ -26,6 +26,12 @@ jira_user = "your.username"
 jira_token = "YOUR_PERSONAL_ACCESS_TOKEN"
 jira_auth_method = "pat"   # "pat" for JIRA Data Center, "basic" for Cloud
 
+# Confluence connection
+confluence_url = "https://confluence.example.com"
+confluence_user = "your.username"
+confluence_token = "YOUR_CONFLUENCE_PAT_OR_API_TOKEN"
+confluence_auth_method = "pat"   # "pat" for Confluence Data Center, "basic" for Cloud
+
 # GitHub connection
 github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 github_url = "https://api.github.com" 
@@ -396,6 +402,43 @@ projects = ["EXTERNAL", "INTEG"]
 
 1. **Targeted Routing (Zero Probing)**: When a chat query specifies a project (e.g. *"Show bugs in CORE"*), Ragdoll parses `project = CORE` from the generated JQL and routes the request **only to the matching server** (`primary`). It will completely skip querying `partner`.
 2. **Probing Fallback**: If a server does not define a `projects` list (or if the query is a general cross-project search), Ragdoll queries all available servers. Missing-project errors on non-hosting servers are caught silently without polluting your chat terminal.
+
+### Multiple Confluence Sites
+
+Similar to `jira_servers`, you can define multiple named Confluence instances in `~/.ragdoll/config.toml`:
+
+```toml
+# Primary internal Confluence (Data Center / Server)
+[confluence_servers.primary]
+url = "https://wiki.internal.example.com"
+token = "PAT_PRIMARY"
+auth_method = "pat"
+spaces = ["CORE", "ARCH"]
+
+# Cloud Confluence instance (Atlassian Cloud)
+[confluence_servers.cloud]
+url = "https://myteam.atlassian.net/wiki"
+user = "you@example.com"
+token = "ATLASSIAN_API_TOKEN"
+auth_method = "basic"
+spaces = ["PUBLIC", "DOCS"]
+```
+
+Target any specific server profile using `--server` on the CLI or in your manifest:
+
+```bash
+pixi run ragdoll ingest confluence --server primary --space CORE
+pixi run ragdoll ingest confluence --server cloud --space PUBLIC
+```
+
+#### Smart Space Routing & Auto-Resolution
+
+Ragdoll makes Confluence ingestion seamless without requiring explicit `--server` flags every time:
+
+1. **Space-to-Server Routing**: When `--server` is omitted, Ragdoll inspects the `spaces` lists across all configured `confluence_servers`. If `--space CORE` is declared under `[confluence_servers.primary]`, Ragdoll automatically routes the request to `primary`.
+2. **Single-Server Fallback**: If exactly one server profile is defined in `confluence_servers` and top-level credentials are not configured, Ragdoll automatically routes to that profile by default.
+3. **Space Name Auto-Resolution**: If you pass a human space title (e.g. `--space "Engineering Team"`), Ragdoll probes the Confluence API and automatically resolves it to the underlying space key (e.g. `ENG`).
+4. **Guaranteed Space Scoping**: Whenever `--space` is specified, Ragdoll automatically scopes any CQL filter into `space = "{KEY}" AND ({CQL})` and enforces a client-side validation guard to prevent cross-space content leakage.
 
 ### Ingestion from Additional Sites via CLI
 

@@ -21,6 +21,7 @@ from rich.console import Console
 
 from ragdoll.ingest.bitbucket import ingest_bitbucket
 from ragdoll.ingest.code import ingest_code
+from ragdoll.ingest.confluence import ingest_confluence
 from ragdoll.ingest.git import ingest_git
 from ragdoll.ingest.github import ingest_github
 from ragdoll.ingest.jira import ingest_jira
@@ -396,6 +397,7 @@ def ingest_all_sources(
         "jira_tickets": 0,
         "github_items": 0,
         "bitbucket_prs": 0,
+        "confluence_pages": 0,
     }
 
     # 1. Optional Repository & PDF Staging
@@ -454,7 +456,7 @@ def ingest_all_sources(
                     batch_size = 50
                     with GracefulInterrupt() as gi:
                         for i in range(0, len(docs), batch_size):
-                            batch = docs[i : i + batch_size]
+                            batch = docs[i: i + batch_size]
                             index.insert_nodes(batch)
                             summary["markdown_documents"] += len(batch)
                             if gi.interrupted:
@@ -483,13 +485,14 @@ def ingest_all_sources(
                     res = ingest_code([rdir], force=force)
                     cdocs, skipped = res if isinstance(res, tuple) else (res, 0)
                     if skipped > 0 and not cdocs:
-                        console.print(f"  ✨ All [green]{skipped}[/green] source file(s) for [bold]{rdir.name}[/bold] are already indexed and up-to-date in ChromaDB.")
+                        console.print(
+                            f"  ✨ All [green]{skipped}[/green] source file(s) for [bold]{rdir.name}[/bold] are already indexed and up-to-date in ChromaDB.")
                     elif cdocs:
                         index = get_index()
                         batch_size = 50
                         with GracefulInterrupt() as gi:
                             for i in range(0, len(cdocs), batch_size):
-                                batch = cdocs[i : i + batch_size]
+                                batch = cdocs[i: i + batch_size]
                                 index.insert_nodes(batch)
                                 summary["code_documents"] += len(batch)
                                 if gi.interrupted:
@@ -618,6 +621,57 @@ def ingest_all_sources(
                                 f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim]).")
                     except Exception as e:
                         console.print(f"  [yellow]Warning:[/yellow] Bitbucket ingestion failed for {project}/{repo}: {e}")
+        step += 1
+
+    # 8. Ingest Confluence Pages (from manifests/confluence.txt)
+    confluence_manifest = _find_manifest(root_p, "confluence.txt")
+    if confluence_manifest:
+        console.print(f"[bold cyan][{step}][/bold cyan] Ingesting Confluence pages declared in [bold]{confluence_manifest}[/bold]...")
+        with open(confluence_manifest, "r", encoding="utf-8") as f:
+            for line in f:
+                clean = line.strip()
+                if not clean or clean.startswith("#"):
+                    continue
+
+                parts = shlex.split(clean)
+                if not parts:
+                    continue
+
+                space = None
+                cql = None
+                server = None
+
+                # If line is pure CQL e.g. "space = CORE AND type = page"
+                if "=" in parts[0] or " " in parts[0]:
+                    cql = parts[0]
+                    server = parts[1] if len(parts) > 1 else None
+                else:
+                    space = parts[0]
+                    if len(parts) > 1 and parts[1] != "-":
+                        cql = parts[1]
+                    if len(parts) > 2:
+                        server = parts[2]
+
+                if space and cql:
+                    target_desc = f"space '{space}' with filter '{cql}'"
+                elif space:
+                    target_desc = f"space '{space}'"
+                else:
+                    target_desc = f"CQL '{cql}'"
+                console.print(f"  -> Ingesting Confluence {target_desc} (server: {server or 'default'})...")
+                try:
+                    res = ingest_confluence(space=space, cql=cql, server=server, force=force)
+                    count = res[0] if isinstance(res, tuple) else res
+                    skipped = res[1] if isinstance(res, tuple) and len(res) >= 2 else 0
+                    summary["confluence_pages"] += count
+                    if skipped > 0 and count == 0:
+                        console.print(
+                            f"  ✨ All [green]{skipped}[/green] Confluence page(s) are already indexed and up-to-date in ChromaDB.")
+                    elif skipped > 0:
+                        console.print(
+                            f"  💾 Stored [green]{count}[/green] new/updated page(s) ([dim]{skipped} up-to-date skipped[/dim]).")
+                except Exception as e:
+                    console.print(f"  [yellow]Warning:[/yellow] Confluence ingestion failed for {target_desc}: {e}")
         step += 1
 
     return summary

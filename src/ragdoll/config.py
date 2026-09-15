@@ -96,14 +96,44 @@ class Settings(BaseSettings):
     jira_batch_size: int = 100  # issues per API request
     jira_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
 
-    def get_jira_config(self, server_name: str | None = None) -> dict:
+    def get_jira_config(
+        self,
+        server_name: str | None = None,
+        project: str | None = None,
+    ) -> dict:
         """Get the active Jira configuration.
-        If server_name is provided and exists in jira_servers, returns that config.
-        Otherwise, falls back to the default global Jira settings.
+
+        Resolution precedence:
+        1. Explicit server_name in jira_servers.
+        2. Match by project key against jira_servers[...]["projects"].
+        3. Single server in jira_servers (if top-level token is not set).
+        4. "default" server in jira_servers (if present).
+        5. Global top-level jira_* settings.
         """
-        if server_name and server_name in self.jira_servers:
-            cfg = self.jira_servers[server_name]
+        resolved_name = server_name
+
+        if not resolved_name and project and self.jira_servers:
+            clean_proj = project.strip().upper()
+            for sname, scfg in self.jira_servers.items():
+                raw_projects = scfg.get("projects", [])
+                if isinstance(raw_projects, str):
+                    s_projects = [p.strip().upper() for p in raw_projects.split(",") if p.strip()]
+                else:
+                    s_projects = [str(p).strip().upper() for p in raw_projects]
+                if clean_proj in s_projects:
+                    resolved_name = sname
+                    break
+
+        if not resolved_name and not self.jira_token and self.jira_servers:
+            if len(self.jira_servers) == 1:
+                resolved_name = next(iter(self.jira_servers.keys()))
+            elif "default" in self.jira_servers:
+                resolved_name = "default"
+
+        if resolved_name and resolved_name in self.jira_servers:
+            cfg = self.jira_servers[resolved_name]
             return {
+                "server_name": resolved_name,
                 "url": cfg.get("url", self.jira_url),
                 "user": cfg.get("user", self.jira_user),
                 "token": cfg.get("token", self.jira_token),
@@ -112,6 +142,7 @@ class Settings(BaseSettings):
                 "projects": cfg.get("projects", []),
             }
         return {
+            "server_name": "default",
             "url": self.jira_url,
             "user": self.jira_user,
             "token": self.jira_token,
@@ -179,6 +210,66 @@ class Settings(BaseSettings):
             elif isinstance(repos, str):
                 all_repos.extend([r.strip() for r in repos.split(",") if r.strip()])
         return list(dict.fromkeys(all_repos))
+
+    # ── CONFLUENCE ─────────────────────────────────────────────────────
+    confluence_servers: dict[str, dict] = Field(default_factory=dict)
+    confluence_url: str = "https://confluence.example.com"
+    confluence_user: str = ""
+    confluence_token: str = ""
+    confluence_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
+
+    def get_confluence_config(
+        self,
+        server_name: str | None = None,
+        space: str | None = None,
+    ) -> dict:
+        """Get the active Confluence configuration.
+
+        Resolution precedence:
+        1. Explicit server_name in confluence_servers.
+        2. Match by space against confluence_servers[...]["spaces"].
+        3. Single server in confluence_servers (if top-level token is not set).
+        4. "default" server in confluence_servers (if present).
+        5. Global top-level confluence_* settings.
+        """
+        resolved_name = server_name
+
+        if not resolved_name and space and self.confluence_servers:
+            clean_sp = space.strip().lower()
+            for sname, scfg in self.confluence_servers.items():
+                raw_spaces = scfg.get("spaces", [])
+                if isinstance(raw_spaces, str):
+                    s_spaces = [s.strip().lower() for s in raw_spaces.split(",") if s.strip()]
+                else:
+                    s_spaces = [str(s).strip().lower() for s in raw_spaces]
+                if clean_sp in s_spaces:
+                    resolved_name = sname
+                    break
+
+        if not resolved_name and not self.confluence_token and self.confluence_servers:
+            if len(self.confluence_servers) == 1:
+                resolved_name = next(iter(self.confluence_servers.keys()))
+            elif "default" in self.confluence_servers:
+                resolved_name = "default"
+
+        if resolved_name and resolved_name in self.confluence_servers:
+            cfg = self.confluence_servers[resolved_name]
+            return {
+                "server_name": resolved_name,
+                "url": cfg.get("url", self.confluence_url),
+                "user": cfg.get("user", self.confluence_user),
+                "token": cfg.get("token", self.confluence_token),
+                "auth_method": cfg.get("auth_method", self.confluence_auth_method),
+                "spaces": cfg.get("spaces", []),
+            }
+        return {
+            "server_name": "default",
+            "url": self.confluence_url,
+            "user": self.confluence_user,
+            "token": self.confluence_token,
+            "auth_method": self.confluence_auth_method,
+            "spaces": [],
+        }
 
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
