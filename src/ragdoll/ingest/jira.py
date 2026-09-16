@@ -172,7 +172,7 @@ def ingest_jira(
     override_user: str | None = None,
     override_token: str | None = None,
     override_auth_method: str | None = None,
-) -> int:
+) -> tuple[int, int]:
     """Ingest JIRA issues with ultra-fast 2-phase scanning and server namespacing.
 
     Phase 1 (Lightweight Scan):
@@ -185,6 +185,9 @@ def ingest_jira(
 
     Phase 3 (Vector Embedding):
         Embeds and indexes documents in batches via LlamaIndex and Ollama.
+
+    Returns:
+        tuple[int, int]: (newly_ingested_count, skipped_existing_count)
     """
     import re
     import urllib.parse
@@ -201,23 +204,26 @@ def ingest_jira(
     cfg_token = override_token or cfg["token"]
     cfg_auth = override_auth_method or cfg["auth_method"]
 
-    # Fall back to URL hostname if server_tag is unresolved or default
-    if not server_tag or server_tag == "default":
-        if cfg_url and cfg_url != "https://jira.example.com":
-            for sname, scfg in settings.jira_servers.items():
-                if scfg.get("url") and scfg["url"].rstrip("/").lower() == cfg_url.rstrip("/").lower():
-                    server_tag = sname.lower()
-                    break
-        if not server_tag or server_tag == "default":
-            if cfg_url and cfg_url != "https://jira.example.com":
-                netloc = urllib.parse.urlparse(cfg_url).netloc
-                server_tag = netloc.split(":")[0].lower() if netloc else "default"
+    if not cfg_url:
+        if server:
+            logger.error("No JIRA configuration found for server profile '%s'.", server)
+        else:
+            logger.error("No JIRA configuration found.")
+        return (0, 0)
+
+    if not server_tag:
+        if server:
+            server_tag = server.strip().lower()
+        else:
+            netloc = urllib.parse.urlparse(cfg_url).netloc
+            if netloc:
+                server_tag = netloc.split(".")[0].lower()
             else:
                 server_tag = "default"
 
     if not cfg_url or not cfg_token or not cfg_user:
         logger.error("JIRA credentials missing in configuration.")
-        return 0
+        return (0, 0)
 
     logger.info("Connecting to JIRA [%s] for query: %s", server_tag, jql)
 
@@ -321,14 +327,14 @@ def ingest_jira(
 
     except Exception as e:
         logger.error("Failed to fetch from JIRA: %s", e)
-        return 0
+        return (0, 0)
 
     if not keys_to_fetch:
         if total_scanned > 0:
             logger.info("All %d matching JIRA issues are already up-to-date in vector DB (0 re-downloaded).", total_scanned)
-            return total_scanned
+            return (0, total_scanned)
         logger.info("No JIRA issues found for query: %s", jql)
-        return 0
+        return (0, 0)
 
     # ── Phase 2: Targeted Fetch of Full Details ──────────────────────────────
     logger.info("Phase 2: Fetching full details for %d new/modified issue(s)...", len(keys_to_fetch))
@@ -369,11 +375,11 @@ def ingest_jira(
 
     except Exception as e:
         logger.error("Failed during full issue data fetch: %s", e)
-        return 0
+        return (0, skipped_count)
 
     if not documents:
         logger.info("No documents extracted from full issue fetch.")
-        return 0
+        return (0, skipped_count)
 
     # ── Phase 3: Batched Vector Store Insertion ──────────────────────────────
     logger.info("Phase 3: Embedding and indexing %d JIRA documents into vector DB...", len(documents))
@@ -416,5 +422,5 @@ def ingest_jira(
                     logger.warning("JIRA embedding interrupted; safely committed %d issues.", min(i + len(batch_docs), len(documents)))
                     break
 
-    logger.info("Successfully ingested %d JIRA issues into vector DB.", len(documents))
-    return len(documents)
+    logger.info("Successfully ingested %d JIRA issues into vector DB (%d up-to-date skipped).", len(documents), skipped_count)
+    return (len(documents), skipped_count)

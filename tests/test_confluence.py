@@ -213,7 +213,7 @@ def test_ingest_confluence_incremental_skipping(mock_session_cls, mock_get_clien
 @patch("ragdoll.ingest.confluence._get_client")
 @patch("requests.Session")
 def test_confluence_cql_space_scoping(mock_session_cls, mock_get_client, mock_get_index):
-    """Verify that specifying space always scopes the CQL query, whether cql is provided or not."""
+    """Verify that specifying space queries /content directly for simple page ingestion and scopes CQL for custom filters."""
     mock_session = MagicMock()
     mock_session_cls.return_value.__enter__.return_value = mock_session
 
@@ -225,20 +225,27 @@ def test_confluence_cql_space_scoping(mock_session_cls, mock_get_client, mock_ge
     with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
             patch.object(settings, "confluence_token", "TEST_TOKEN"), \
             patch.object(settings, "confluence_servers", {}):
-        # 1. space provided with cql="type = page" -> combined
+        # 1. space provided with cql="type = page" -> direct /content endpoint with spaceKey and type
         ingest_confluence(space="DOCS", cql="type = page")
         call_params = mock_session.get.call_args[1]["params"]
-        assert call_params["cql"] == 'space = "DOCS" AND (type = page)'
+        assert call_params["spaceKey"] == "DOCS"
+        assert call_params["type"] == "page"
 
-        # 2. space provided with cql=None -> defaults to space = "DOCS" AND type = page
+        # 2. space provided with cql=None -> defaults to direct /content endpoint with spaceKey and type
         ingest_confluence(space="DOCS", cql=None)
         call_params = mock_session.get.call_args[1]["params"]
-        assert call_params["cql"] == 'space = "DOCS" AND type = page'
+        assert call_params["spaceKey"] == "DOCS"
+        assert call_params["type"] == "page"
 
-        # 3. space already in cql -> not duplicated
-        ingest_confluence(space="DOCS", cql='space = "DOCS" AND type = page')
+        # 3. space provided with custom CQL -> scoped via CQL search endpoint
+        ingest_confluence(space="DOCS", cql="label = 'release'")
         call_params = mock_session.get.call_args[1]["params"]
-        assert call_params["cql"] == 'space = "DOCS" AND type = page'
+        assert call_params["cql"] == 'space = "DOCS" AND (label = \'release\')'
+
+        # 4. space already in custom CQL -> not duplicated
+        ingest_confluence(space="DOCS", cql='space = "DOCS" AND label = \'release\'')
+        call_params = mock_session.get.call_args[1]["params"]
+        assert call_params["cql"] == 'space = "DOCS" AND label = \'release\''
 
 
 @patch("ragdoll.ingest.confluence.get_index")
@@ -311,37 +318,316 @@ def test_confluence_space_client_guard(mock_session_cls, mock_get_client, mock_g
 @patch("ragdoll.ingest.confluence.get_index")
 @patch("ragdoll.ingest.confluence._get_client")
 @patch("requests.Session")
-def test_confluence_space_resolution_with_cql(mock_session_cls, mock_get_client, mock_get_index):
-    """Verify human space name resolves to space key even when cql filter is specified."""
+def test_confluence_space_with_custom_cql(mock_session_cls, mock_get_client, mock_get_index):
+    """Verify specifying space with custom CQL routes to search endpoint and scopes query."""
     mock_session = MagicMock()
     mock_session_cls.return_value.__enter__.return_value = mock_session
 
-    def mock_get(url, **kwargs):
-        resp = MagicMock()
-        resp.status_code = 200
-        if "/space/Engineering" in url:
-            resp.status_code = 404
-            return resp
-        elif url.endswith("/space"):
-            resp.json.return_value = {
-                "results": [
-                    {"key": "ENG", "name": "Engineering"},
-                    {"key": "DOCS", "name": "Documentation"},
-                ]
+    empty_resp = MagicMock()
+    empty_resp.status_code = 200
+    empty_resp.json.return_value = {"results": []}
+    mock_session.get.return_value = empty_resp
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+            patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+            patch.object(settings, "confluence_servers", {}):
+        ingest_confluence(space="ENG", cql="label = 'release'")
+
+        call_params = mock_session.get.call_args[1]["params"]
+        assert call_params["cql"] == 'space = "ENG" AND (label = \'release\')'
+
+
+@patch("ragdoll.ingest.confluence.get_index")
+@patch("ragdoll.ingest.confluence._get_client")
+@patch("requests.Session")
+def test_confluence_search_html_error_fallback_to_content(mock_session_cls, mock_get_client, mock_get_index):
+    """Verify that when /search returns an HTML error page (or non-JSON), it falls back to /content?spaceKey=..."""
+    mock_chroma_col = MagicMock()
+    mock_chroma_col.get.return_value = {"ids": [], "metadatas": []}
+    mock_client = MagicMock()
+    mock_client.get_or_create_collection.return_value = mock_chroma_col
+    mock_get_client.return_value = mock_client
+
+    mock_index = MagicMock()
+    mock_get_index.return_value = mock_index
+
+    mock_session = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    # 1. Search endpoint returns HTML error response (e.g. Tomcat / Jersey error page)
+    html_error_resp = MagicMock()
+    html_error_resp.ok = False
+    html_error_resp.status_code = 500
+    html_error_resp.reason = "Internal Server Error"
+    html_error_resp.text = "<html><body>500 Internal Server Error</body></html>"
+    html_error_resp.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    # 2. Content endpoint returns valid JSON page list
+    content_list_resp = MagicMock()
+    content_list_resp.ok = True
+    content_list_resp.status_code = 200
+    content_list_resp.json.return_value = {
+        "results": [
+            {
+                "id": "501",
+                "title": "Fallback Page",
+                "space": {"key": "CORE", "name": "Core Space"},
+                "version": {"number": 1, "when": "2026-03-15T10:00:00.000Z"},
             }
-            return resp
+        ]
+    }
+
+    # 3. Phase 2 detail page response
+    detail_resp = MagicMock()
+    detail_resp.ok = True
+    detail_resp.status_code = 200
+    detail_resp.json.return_value = {
+        "id": "501",
+        "title": "Fallback Page",
+        "space": {"key": "CORE", "name": "Core Space"},
+        "version": {"number": 1, "when": "2026-03-15T10:00:00.000Z"},
+        "body": {"storage": {"value": "<p>Content recovered via fallback.</p>"}},
+        "_links": {"webui": "/pages/501"},
+    }
+
+    def mock_get(url, **kwargs):
+        if "501" in url:
+            return detail_resp
         elif "/search" in url:
-            resp.json.return_value = {"results": []}
-            return resp
-        return resp
+            return html_error_resp
+        return content_list_resp
 
     mock_session.get.side_effect = mock_get
 
     with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
             patch.object(settings, "confluence_token", "TEST_TOKEN"), \
             patch.object(settings, "confluence_servers", {}):
-        ingest_confluence(space="Engineering", cql="type = page")
+        ingested, skipped = ingest_confluence(space="CORE")
 
-        # The query should resolve "Engineering" -> "ENG" and scope CQL
-        call_params = mock_session.get.call_args[1]["params"]
-        assert call_params["cql"] == 'space = "ENG" AND (type = page)'
+    assert ingested == 1
+    assert skipped == 0
+    inserted_docs = mock_index.insert_nodes.call_args[0][0]
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0].id_ == "confluence-default-501"
+
+
+@patch("ragdoll.ingest.confluence.get_index")
+@patch("ragdoll.ingest.confluence._get_client")
+@patch("requests.Session")
+def test_confluence_search_unwrapping_content_wrapper(mock_session_cls, mock_get_client, mock_get_index):
+    """Verify that search responses wrapping item inside 'content' are correctly normalized."""
+    mock_chroma_col = MagicMock()
+    mock_chroma_col.get.return_value = {"ids": [], "metadatas": []}
+    mock_client = MagicMock()
+    mock_client.get_or_create_collection.return_value = mock_chroma_col
+    mock_get_client.return_value = mock_client
+
+    mock_index = MagicMock()
+    mock_get_index.return_value = mock_index
+
+    mock_session = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    search_resp = MagicMock()
+    search_resp.ok = True
+    search_resp.status_code = 200
+    search_resp.json.return_value = {
+        "results": [
+            {
+                "content": {
+                    "id": "601",
+                    "title": "CQL Searched Page",
+                    "space": {"key": "CORE", "name": "Core Space"},
+                    "version": {"number": 1, "when": "2026-03-15T12:00:00.000Z"},
+                },
+                "title": "CQL Searched Page",
+            }
+        ]
+    }
+
+    detail_resp = MagicMock()
+    detail_resp.ok = True
+    detail_resp.status_code = 200
+    detail_resp.json.return_value = {
+        "id": "601",
+        "title": "CQL Searched Page",
+        "space": {"key": "CORE", "name": "Core Space"},
+        "version": {"number": 1, "when": "2026-03-15T12:00:00.000Z"},
+        "body": {"storage": {"value": "<p>CQL page content.</p>"}},
+        "_links": {"webui": "/pages/601"},
+    }
+
+    def mock_get(url, **kwargs):
+        if "601" in url:
+            return detail_resp
+        return search_resp
+
+    mock_session.get.side_effect = mock_get
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+            patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+            patch.object(settings, "confluence_servers", {}):
+        ingested, skipped = ingest_confluence(space="CORE", cql="label = 'release'")
+
+    assert ingested == 1
+    inserted_docs = mock_index.insert_nodes.call_args[0][0]
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0].id_ == "confluence-default-601"
+
+
+@patch("ragdoll.ingest.confluence.get_index")
+@patch("ragdoll.ingest.confluence._get_client")
+@patch("requests.Session")
+def test_confluence_basic_auth(mock_session_cls, mock_get_client, mock_get_index):
+    """Verify that when auth_method='basic' is configured, HTTP Basic Auth is applied directly."""
+    mock_chroma_col = MagicMock()
+    mock_chroma_col.get.return_value = {"ids": [], "metadatas": []}
+    mock_client = MagicMock()
+    mock_client.get_or_create_collection.return_value = mock_chroma_col
+    mock_get_client.return_value = mock_client
+
+    mock_index = MagicMock()
+    mock_get_index.return_value = mock_index
+
+    mock_session = MagicMock()
+    mock_session.auth = None
+    mock_session.headers = {}
+    mock_session.cookies = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    page_resp = MagicMock()
+    page_resp.status_code = 200
+    page_resp.ok = True
+    page_resp.json.return_value = {
+        "results": [
+            {
+                "id": "701",
+                "title": "Secured Page",
+                "space": {"key": "CORE", "name": "Core Space"},
+                "version": {"number": 1, "when": "2026-03-15T12:00:00.000Z"},
+            }
+        ]
+    }
+
+    detail_resp = MagicMock()
+    detail_resp.status_code = 200
+    detail_resp.ok = True
+    detail_resp.json.return_value = {
+        "id": "701",
+        "title": "Secured Page",
+        "space": {"key": "CORE", "name": "Core Space"},
+        "version": {"number": 1, "when": "2026-03-15T12:00:00.000Z"},
+        "body": {"storage": {"value": "<p>Secured page body.</p>"}},
+        "_links": {"webui": "/pages/701"},
+    }
+
+    def mock_get(url, **kwargs):
+        if "701" in url:
+            return detail_resp
+        return page_resp
+
+    mock_session.get.side_effect = mock_get
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+            patch.object(settings, "confluence_user", "developer"), \
+            patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+            patch.object(settings, "confluence_auth_method", "basic"), \
+            patch.object(settings, "confluence_servers", {}):
+        ingested, skipped = ingest_confluence(space="CORE")
+
+    assert ingested == 1
+    # Verify session.auth was directly set to Basic auth with user and token
+    assert mock_session.auth == ("developer", "TEST_TOKEN")
+    inserted_docs = mock_index.insert_nodes.call_args[0][0]
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0].id_ == "confluence-default-701"
+
+
+@patch("requests.Session")
+def test_confluence_login_page_diagnostic(mock_session_cls):
+    """Verify that when a login page redirect occurs, it halts cleanly without probing."""
+    mock_session = MagicMock()
+    mock_session.auth = None
+    mock_session.headers = {}
+    mock_session.cookies = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    login_resp = MagicMock()
+    login_resp.status_code = 200
+    login_resp.ok = True
+    login_resp.url = "https://wiki.example.com/login.action"
+    login_resp.text = "<html><head><title>Log In - Confluence</title></head><body>Login form</body></html>"
+    login_resp.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    mock_session.get.return_value = login_resp
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+            patch.object(settings, "confluence_user", "developer"), \
+            patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+            patch.object(settings, "confluence_auth_method", "pat"), \
+            patch.object(settings, "confluence_servers", {}):
+        ingested, skipped = ingest_confluence(space="CORE")
+
+    assert ingested == 0
+    # Crucial: verify mock_session.get was called exactly ONCE (no blind retry probe)
+    assert mock_session.get.call_count == 1
+
+
+@patch("requests.Session")
+def test_confluence_waf_challenge_halts_without_retries(mock_session_cls):
+    """Verify that Cloudflare / WAF challenges halt immediately without probing or auth retries."""
+    mock_session = MagicMock()
+    mock_session.auth = None
+    mock_session.headers = {}
+    mock_session.cookies = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    waf_resp = MagicMock()
+    waf_resp.status_code = 200
+    waf_resp.ok = True
+    waf_resp.url = "https://wiki.example.com/challenge?destination=%2Frest%2Fapi%2Fcontent"
+    waf_resp.text = "<html><head><title>Verifying connection</title></head><body>Cloudflare challenge</body></html>"
+    waf_resp.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    mock_session.get.return_value = waf_resp
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+         patch.object(settings, "confluence_user", "developer"), \
+         patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+         patch.object(settings, "confluence_auth_method", "pat"), \
+         patch.object(settings, "confluence_servers", {}):
+        ingested, skipped = ingest_confluence(space="CORE")
+
+    assert ingested == 0
+    # Crucial: verify that mock_session.get was called exactly ONCE (no auth retries or endpoint probing)
+    assert mock_session.get.call_count == 1
+    # Verify auth was never altered to Basic auth
+    assert mock_session.auth is None
+
+
+@patch("requests.Session")
+def test_confluence_cookie_configuration(mock_session_cls):
+    """Verify that custom cookie configuration is applied to the request headers."""
+    mock_session = MagicMock()
+    mock_session.headers = {}
+    mock_session.cookies = MagicMock()
+    mock_session_cls.return_value.__enter__.return_value = mock_session
+
+    empty_resp = MagicMock()
+    empty_resp.status_code = 200
+    empty_resp.ok = True
+    empty_resp.json.return_value = {"results": []}
+    mock_session.get.return_value = empty_resp
+
+    with patch.object(settings, "confluence_url", "https://wiki.example.com"), \
+         patch.object(settings, "confluence_token", "TEST_TOKEN"), \
+         patch.object(settings, "confluence_cookie", "cf_clearance=test123cookie; session=xyz"), \
+         patch.object(settings, "confluence_servers", {}):
+        ingest_confluence(space="CORE")
+
+    # Verify session.headers was updated with Cookie and browser User-Agent
+    assert mock_session.headers.get("Cookie") == "cf_clearance=test123cookie; session=xyz"
+    assert "Mozilla" in mock_session.headers.get("User-Agent", "")
+
+
+

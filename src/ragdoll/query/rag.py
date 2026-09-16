@@ -12,7 +12,7 @@ import re
 
 from llama_index.core import Settings
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
-from ragdoll.config import get_llm, settings
+from ragdoll.config import get_llm, settings, DEFAULT_USER_AGENT
 from ragdoll.query.retriever import SearchResult, search
 
 logger = logging.getLogger(__name__)
@@ -257,7 +257,9 @@ def query_live_jira(jql: str) -> str:
             })
 
     # Clean accidental server/org names from project clause (e.g. project = "myorg MYPROJ" -> project = MYPROJ)
-    known_server_keys = {k.lower() for k in settings.jira_servers.keys()} | {"jira", "primary", "secondary", "enterprise", "cloud", "server", "myorg"}
+    known_server_keys = {k.lower() for k in settings.jira_servers.keys()} | {"jira", "primary",
+                                                                             "secondary", "enterprise", "cloud", "server", "myorg"}
+
     def _clean_project_clause(match: re.Match) -> str:
         raw_val = match.group(1) or match.group(2) or match.group(3) or ""
         tokens = [t for t in re.findall(r"[A-Za-z0-9_]+", raw_val) if t.upper() not in ("AND", "OR", "NOT", "IN", "IS", "NULL", "EMPTY")]
@@ -409,7 +411,10 @@ def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
         if server_url.endswith("/"):
             server_url = server_url[:-1]
 
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
+        }
         if cfg["auth_method"] == "pat":
             headers["Authorization"] = f"Bearer {cfg['token']}"
         elif cfg["auth_method"] == "basic" and cfg["user"]:
@@ -484,6 +489,7 @@ def query_live_github(owner: str, repo: str, state: str = "open", item_type: str
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"

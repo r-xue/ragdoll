@@ -36,6 +36,12 @@ from pydantic_settings import (
 _USER_CONFIG = Path.home() / ".ragdoll" / "config.toml"  # layer 3
 _PROJECT_CONFIG = "ragdoll.toml"                          # layer 2 (CWD-relative)
 
+# Standard browser User-Agent to prevent WAF / CDN bot flagging
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 
 class Settings(BaseSettings):
     """Ragdoll configuration.
@@ -217,6 +223,7 @@ class Settings(BaseSettings):
     confluence_user: str = ""
     confluence_token: str = ""
     confluence_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
+    confluence_cookie: str = ""
 
     def get_confluence_config(
         self,
@@ -260,6 +267,7 @@ class Settings(BaseSettings):
                 "user": cfg.get("user", self.confluence_user),
                 "token": cfg.get("token", self.confluence_token),
                 "auth_method": cfg.get("auth_method", self.confluence_auth_method),
+                "cookie": cfg.get("cookie", cfg.get("cookies", self.confluence_cookie)),
                 "spaces": cfg.get("spaces", []),
             }
         return {
@@ -268,6 +276,7 @@ class Settings(BaseSettings):
             "user": self.confluence_user,
             "token": self.confluence_token,
             "auth_method": self.confluence_auth_method,
+            "cookie": self.confluence_cookie,
             "spaces": [],
         }
 
