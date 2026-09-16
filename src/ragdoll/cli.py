@@ -125,7 +125,7 @@ def ingest_jira(
     from ragdoll.ingest.jira import ingest_jira as _ingest_jira
     from ragdoll.store.vectordb import count
 
-    n = _ingest_jira(
+    res = _ingest_jira(
         jql=jql,
         server=server,
         max_results=max_results,
@@ -133,15 +133,22 @@ def ingest_jira(
         override_url=url,
         override_user=user,
         override_token=token,
-        override_auth_method=auth_method
+        override_auth_method=auth_method,
     )
+    if isinstance(res, tuple):
+        n, skipped = res
+    else:
+        n, skipped = res, 0
 
-    if n == 0:
+    if n == 0 and skipped == 0:
         console.print("[yellow]No issues found or ingested for the given JQL.[/yellow]")
         return
-
-    console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB")
-    console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
+    elif skipped > 0 and n == 0:
+        console.print(f"  ✨ All [green]{skipped}[/green] Jira ticket(s) are already indexed and up-to-date in ChromaDB.")
+    else:
+        skipped_text = f" ([dim]{skipped} up-to-date skipped[/dim])" if skipped > 0 else ""
+        console.print(f"  💾 Stored [green]{n}[/green] chunk(s) in vector DB{skipped_text}")
+        console.print(f"  📊 Total chunks in collection: [bold]{count()}[/bold]")
 
 
 @ingest.command("bitbucket")

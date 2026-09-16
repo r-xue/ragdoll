@@ -9,7 +9,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from llama_index.core import Document
-from ragdoll.config import settings
+from ragdoll.config import settings, DEFAULT_USER_AGENT
 from ragdoll.store.vectordb import get_index, _get_client
 from ragdoll.store.safety import GracefulInterrupt
 
@@ -54,6 +54,7 @@ def ingest_github(
         "Accept": "application/vnd.github.v3+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "Connection": "keep-alive",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
     if cfg_token:
         headers["Authorization"] = f"Bearer {cfg_token}"

@@ -19,6 +19,7 @@ from typing import Any
 
 from rich.console import Console
 
+from ragdoll.config import DEFAULT_USER_AGENT
 from ragdoll.ingest.bitbucket import ingest_bitbucket
 from ragdoll.ingest.code import ingest_code
 from ragdoll.ingest.confluence import ingest_confluence
@@ -330,7 +331,10 @@ def stage_pdfs(
                 logger.info("Downloading %s -> %s", url, dest)
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "Ragdoll-Pipeline/1.0 (Python urllib)"},
+                    headers={
+                        "User-Agent": DEFAULT_USER_AGENT,
+                        "Accept": "*/*",
+                    },
                 )
                 part_dest = dest.with_suffix(dest.suffix + ".part")
                 with urllib.request.urlopen(req, timeout=60) as resp, open(part_dest, "wb") as out_f:
@@ -551,8 +555,18 @@ def ingest_all_sources(
 
                 console.print(f"  -> Fetching Jira issues: [dim]{jql}[/dim] (server: {server or 'default'})...")
                 try:
-                    count = ingest_jira(jql=jql, server=server, force=force)
+                    res = ingest_jira(jql=jql, server=server, force=force)
+                    count = res[0] if isinstance(res, tuple) else res
+                    skipped = res[1] if isinstance(res, tuple) and len(res) >= 2 else 0
                     summary["jira_tickets"] += count
+                    if skipped > 0 and count == 0:
+                        console.print(
+                            f"  ✨ All [green]{skipped}[/green] Jira ticket(s) are already indexed and up-to-date in ChromaDB."
+                        )
+                    elif skipped > 0:
+                        console.print(
+                            f"  💾 Stored [green]{count}[/green] new/updated chunk(s) ([dim]{skipped} up-to-date skipped[/dim])."
+                        )
                 except Exception as e:
                     console.print(f"  [yellow]Warning:[/yellow] Jira ingestion failed for '{jql}': {e}")
         step += 1

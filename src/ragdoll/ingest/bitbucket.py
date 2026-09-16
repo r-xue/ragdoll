@@ -9,7 +9,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from llama_index.core import Document
-from ragdoll.config import settings
+from ragdoll.config import settings, DEFAULT_USER_AGENT
 from ragdoll.store.vectordb import get_index, _get_client
 from ragdoll.store.safety import GracefulInterrupt
 
@@ -63,6 +63,7 @@ def ingest_bitbucket(
     headers = {
         "Accept": "application/json",
         "Connection": "keep-alive",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
     if cfg_auth == "pat":
         headers["Authorization"] = f"Bearer {cfg_token}"

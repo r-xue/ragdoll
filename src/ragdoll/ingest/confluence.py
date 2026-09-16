@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 import dateutil.parser
 
 from llama_index.core import Document
-from ragdoll.config import settings
+from ragdoll.config import settings, DEFAULT_USER_AGENT
 from ragdoll.store.vectordb import get_index, _get_client
 from ragdoll.store.safety import GracefulInterrupt
 
@@ -174,6 +174,31 @@ def _build_confluence_document(
     )
 
 
+def _format_html_error(resp: requests.Response) -> str:
+    """Format a clear diagnostic error message when Confluence returns an HTML response."""
+    title = ""
+    match = re.search(r"<title>(.*?)</title>", resp.text, re.IGNORECASE | re.DOTALL)
+    if match:
+        title = match.group(1).strip().replace("\n", " ")
+
+    url_lower = resp.url.lower()
+    body_lower = resp.text.lower()[:2000] if resp.text else ""
+
+    if "/challenge" in url_lower or "verifying connection" in body_lower or "cf-ray" in resp.headers:
+        return (
+            f"Confluence request blocked by Cloudflare / WAF challenge [title: '{title or 'Challenge'}']. "
+            "To resolve: (1) verify VPN or internal network connection, or (2) configure 'cookie' (with your browser's cf_clearance / session cookie) "
+            "under [confluence_servers.<name>] in ~/.ragdoll/config.toml."
+        )
+    if "login" in url_lower or "log in" in (title.lower() or body_lower) or "seraph" in url_lower:
+        return (
+            f"Confluence redirected request to a login page [title: '{title or 'Log In'}']. "
+            "The server may require HTTP Basic authentication. Please check credentials or set auth_method = 'basic' in ~/.ragdoll/config.toml."
+        )
+    title_desc = f" [title: '{title}']" if title else ""
+    return f"Confluence returned non-JSON response{title_desc} (status {resp.status_code})."
+
+
 def ingest_confluence(
     space: str | None = None,
     cql: str | None = None,
@@ -211,6 +236,7 @@ def ingest_confluence(
     cfg_user = override_user or cfg["user"]
     cfg_token = override_token or cfg["token"]
     cfg_auth = override_auth_method or cfg["auth_method"]
+    cfg_cookie = cfg.get("cookie", "")
 
     if not cfg_url or cfg_url == "https://confluence.example.com" or not cfg_token:
         logger.error(
@@ -221,9 +247,13 @@ def ingest_confluence(
 
     base_url = cfg_url.rstrip("/")
     headers = {
-        "Accept": "application/json",
-        "User-Agent": "Ragdoll-Confluence-Ingest/1.0",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": DEFAULT_USER_AGENT,
+        "X-Atlassian-Token": "no-check",
     }
+    if cfg_cookie:
+        headers["Cookie"] = cfg_cookie
     auth = None
     if cfg_auth == "pat":
         headers["Authorization"] = f"Bearer {cfg_token}"
@@ -262,66 +292,68 @@ def ingest_confluence(
         if auth:
             session.auth = auth
 
-        # Probe base REST content endpoint (/rest/api/content vs /wiki/rest/api/content)
         content_endpoint = f"{base_url}/rest/api/content"
-        if "/wiki" not in base_url.lower():
-            try:
-                probe = session.get(content_endpoint, params={"limit": 1}, timeout=5)
-                if probe.status_code == 404:
-                    wiki_endpoint = f"{base_url}/wiki/rest/api/content"
-                    probe_wiki = session.get(wiki_endpoint, params={"limit": 1}, timeout=5)
-                    if probe_wiki.status_code == 200:
-                        content_endpoint = wiki_endpoint
-            except Exception as e:
-                logger.debug("Endpoint probing notice: %s", e)
+        rest_base = content_endpoint.rsplit("/content", 1)[0]
 
-        # Space Key Auto-Resolution:
-        # Users often pass the human Space Name (e.g. "Engineering") instead of the internal Space Key ("ENG").
-        if space:
-            rest_base = content_endpoint.rsplit("/content", 1)[0]
+        def _get_json(url: str, query_params: dict[str, Any]) -> tuple[dict[str, Any] | None, Exception | None]:
+            req_params = dict(query_params)
+            req_params.setdefault("os_authType", "basic")
+
             try:
-                sp_chk = session.get(f"{rest_base}/space/{space}", timeout=5)
-                if sp_chk.status_code == 404:
-                    all_sp = session.get(f"{rest_base}/space", params={"limit": 500}, timeout=10)
-                    if all_sp.status_code == 200:
-                        spaces_list = all_sp.json().get("results", [])
-                        matched_key = None
-                        for sp in spaces_list:
-                            if sp.get("key", "").lower() == space.lower() or sp.get("name", "").lower() == space.lower():
-                                matched_key = sp.get("key")
-                                break
-                        if matched_key:
-                            logger.info("Resolved Confluence space '%s' -> space key '%s'", space, matched_key)
-                            space = matched_key
-                        else:
-                            similar = [
-                                f"'{s.get('key')}' ({s.get('name')})"
-                                for s in spaces_list
-                                if space.lower() in s.get("name", "").lower() or space.lower() in s.get("key", "").lower()
-                            ]
-                            if similar:
-                                logger.warning("Space key '%s' not found. Did you mean: %s?", space, ", ".join(similar[:5]))
+                resp = session.get(url, params=req_params, timeout=20)
             except Exception as e:
-                logger.debug("Space auto-resolution notice: %s", e)
+                return None, e
+
+            # Check if status indicates error
+            if resp.status_code >= 400:
+                return None, requests.HTTPError(f"HTTP {resp.status_code}: {resp.reason}", response=resp)
+
+            # Check if JSON can be parsed
+            try:
+                data = resp.json()
+                return data, None
+            except Exception:
+                session.cookies.clear()
+                return None, ValueError(_format_html_error(resp))
 
         # ── Phase 1: Lightweight Metadata Scan ────────────────────────────────
         logger.info("Phase 1: Scanning Confluence metadata to detect new/modified pages...")
         start_at = 0
         batch_size = 50
 
-        # Construct effective CQL query scoped properly by space if specified
-        effective_cql = cql
-        if space:
-            clean_space = space.strip().strip('"').strip("'")
-            if effective_cql:
-                # If space filter is not already specified in cql, scope it to this space
-                if not re.search(r"\bspace\s*(=|!=|in\b)", effective_cql, re.IGNORECASE):
-                    effective_cql = f'space = "{clean_space}" AND ({effective_cql})'
-            else:
-                effective_cql = f'space = "{clean_space}" AND type = page'
+        clean_space = space.strip().strip('"').strip("'") if space else None
 
-        search_url = f"{content_endpoint}/search"
-        base_params: dict[str, Any] = {"cql": effective_cql, "expand": "version,history,space"}
+        # Check if this is a standard space page ingestion without custom CQL criteria
+        is_simple_page_filter = not cql or cql.strip().strip('"').strip("'").lower() in {
+            "type = page",
+            "type=page",
+        }
+
+        search_url = f"{rest_base}/search"
+        if clean_space and is_simple_page_filter:
+            # Query /rest/api/content directly:
+            # Direct, canonical, ultra-reliable, and avoids CQL search indexing or permission overhead.
+            use_search_endpoint = False
+            base_params: dict[str, Any] = {
+                "spaceKey": clean_space,
+                "type": "page",
+                "expand": "version,history,space",
+            }
+        else:
+            # CQL search endpoint requested for custom CQL queries
+            effective_cql = cql
+            if clean_space:
+                if effective_cql:
+                    if not re.search(r"\bspace\s*(=|!=|in\b)", effective_cql, re.IGNORECASE):
+                        effective_cql = f'space = "{clean_space}" AND ({effective_cql})'
+                else:
+                    effective_cql = f'space = "{clean_space}" AND type = page'
+
+            use_search_endpoint = True
+            base_params = {
+                "cql": effective_cql,
+                "expand": "content.version,content.history,content.space,version,history,space",
+            }
 
         while True:
             current_limit = batch_size
@@ -332,46 +364,25 @@ def ingest_confluence(
                 current_limit = min(batch_size, remaining)
 
             params = {**base_params, "start": start_at, "limit": current_limit}
+            target_url = search_url if use_search_endpoint else content_endpoint
 
-            try:
-                resp = session.get(search_url, params=params, timeout=20)
-                if resp.status_code == 404 and search_url.endswith("/search") and space:
-                    logger.debug("CQL /search endpoint returned 404; falling back to /content?spaceKey=...")
-                    search_url = content_endpoint
-                    base_params = {"spaceKey": space, "type": "page", "expand": "version,history,space"}
-                    params = {**base_params, "start": start_at, "limit": current_limit}
-                    resp = session.get(search_url, params=params, timeout=20)
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                logger.error("Failed to fetch page list from Confluence (%s): %s", search_url, e)
+            data, err = _get_json(target_url, params)
+            if err:
+                logger.error("Failed to fetch page list from Confluence (%s): %s", target_url, err)
                 break
 
-            raw_results = data.get("results", [])
+            raw_results = data.get("results", []) if isinstance(data, dict) else []
             if not raw_results:
                 break
 
-            # Client-side space validation guard:
-            # Strictly verify that returned pages belong to the targeted space to prevent
-            # any cross-space leakage if the remote query was underspecified or misbehaved.
-            if space:
-                clean_space = space.strip().strip('"').strip("'").upper()
-                page_batch = []
-                for p in raw_results:
+            page_batch = []
+            for item in raw_results:
+                p = item.get("content") if isinstance(item.get("content"), dict) else item
+                if clean_space:
                     p_space = (p.get("space", {}).get("key") or "").strip().upper()
-                    if p_space and p_space != clean_space:
-                        logger.debug(
-                            "Filtering out page %s ('%s') belonging to space '%s' (expected '%s')",
-                            p.get("id"),
-                            p.get("title"),
-                            p_space,
-                            space,
-                        )
+                    if p_space and p_space != clean_space.upper():
                         continue
-                    page_batch.append(p)
-            else:
-                page_batch = raw_results
-
+                page_batch.append(p)
             total_scanned += len(page_batch)
 
             # Query existing timestamps in ChromaDB for this batch
@@ -432,11 +443,14 @@ def ingest_confluence(
 
         for p in pages_to_fetch:
             page_id = str(p.get("id"))
+            if not page_id or page_id == "None":
+                continue
             page_url = f"{content_endpoint}/{page_id}"
             try:
-                p_resp = session.get(page_url, params={"expand": "body.storage,version,history,space"}, timeout=20)
-                p_resp.raise_for_status()
-                full_page = p_resp.json()
+                full_page, p_err = _get_json(page_url, {"expand": "body.storage,version,history,space"})
+                if p_err or not full_page:
+                    logger.warning("Failed to fetch body for Confluence page %s (%s): %s", page_id, p.get("title"), p_err)
+                    continue
                 html_body = full_page.get("body", {}).get("storage", {}).get("value", "")
                 doc = _build_confluence_document(full_page, html_body, base_url, server_tag=server_tag)
                 documents.append(doc)
