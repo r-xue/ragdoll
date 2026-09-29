@@ -7,10 +7,10 @@ from ragdoll.ingest.bitbucket import _build_pr_document, ingest_bitbucket
 def test_build_bitbucket_document():
     pr = {
         "id": 105,
-        "title": "Fix calibration table format",
-        "description": "Updates CASA calibration schema.",
+        "title": "Fix metric table format",
+        "description": "Updates telemetry schema.",
         "state": "MERGED",
-        "author": {"user": {"displayName": "Dr. Scientist"}},
+        "author": {"user": {"displayName": "Alice"}},
         "createdDate": 1777629600000,
         "updatedDate": 1777716000000,
     }
@@ -25,24 +25,24 @@ def test_build_bitbucket_document():
         },
         {
             "action": "MERGED",
-            "user": {"displayName": "Dr. Scientist"},
+            "user": {"displayName": "Alice"},
             "createdDate": 1777716000000,
         },
     ]
 
-    doc = _build_pr_document(pr, activities, project="PIPE", repo="pipeline")
-    assert doc.id_ == "bitbucket-PIPE-pipeline-105"
+    doc = _build_pr_document(pr, activities, project="PROJ", repo="backend")
+    assert doc.id_ == "bitbucket-PROJ-backend-105"
     assert doc.metadata["source"] == "bitbucket"
-    assert doc.metadata["project"] == "PIPE"
-    assert doc.metadata["repo"] == "pipeline"
+    assert doc.metadata["project"] == "PROJ"
+    assert doc.metadata["repo"] == "backend"
     assert doc.metadata["pr_id"] == "105"
     assert doc.metadata["status"] == "MERGED"
-    assert doc.metadata["author"] == "Dr. Scientist"
+    assert doc.metadata["author"] == "Alice"
     assert doc.metadata["updated_at_ts"] == 1777716000.0
 
-    assert "Title: [PR-105] Fix calibration table format" in doc.text
+    assert "Title: [PR-105] Fix metric table format" in doc.text
     assert "[Reviewer A - " in doc.text
-    assert "*** [Dr. Scientist - " in doc.text
+    assert "*** [Alice - " in doc.text
     assert "MERGED the pull request" in doc.text
 
 

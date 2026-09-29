@@ -65,7 +65,7 @@ RAGDOLL_CHROMA_HOST=http://ragdoll-server.internal:8000 pixi run ragdoll ingest-
 ### 1. Document Contributions (PDF & Markdown)
 * Place PDFs in `sources/pdf/memos/`, `sources/pdf/architecture/`, or `sources/pdf/user_guides/`.
 * Place Markdown files in `sources/markdown/specs/` or `sources/markdown/notes/`.
-* Use clear, descriptive, lowercase filenames with underscores (e.g. `memo_101_calibration_heuristics.pdf`).
+* Use clear, descriptive, lowercase filenames with underscores (e.g. `memo_101_batch_processing_heuristics.pdf`).
 
 ### 2. Declarative Manifests (`sources/manifests/`)
 * **Code Repositories**: Declare Git clone URLs in [`sources/manifests/repos.txt`](./manifests/repos.txt).
@@ -86,7 +86,7 @@ pixi run ragdoll chat
 
 # Semantic Search
 pixi run ragdoll search "memory allocation buffer" --source code
-pixi run ragdoll search "calibration pipeline" --source pdf
+pixi run ragdoll search "data processing pipeline" --source pdf
 pixi run ragdoll search "authentication token refresh" --source jira
 ```
 

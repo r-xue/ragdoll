@@ -21,9 +21,9 @@ most-specific scope wins.
 """
 
 from pathlib import Path
-from typing import Tuple, Type
+from typing import Any, Tuple, Type
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 
 from pydantic_settings import (
     BaseSettings,
@@ -31,6 +31,23 @@ from pydantic_settings import (
     SettingsConfigDict,
     TomlConfigSettingsSource,
 )
+
+
+class MaskedSecret(SecretStr):
+    """SecretStr wrapper that masks in logs/repr while supporting equality with str for testing."""
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, str):
+            return self.get_secret_value() == other
+        return super().__eq__(other)
+
+
+def _extract_secret(val: Any) -> str:
+    """Extract plain text string from SecretStr or plain str/None."""
+    if isinstance(val, SecretStr):
+        return val.get_secret_value()
+    return str(val) if val is not None else ""
+
 
 # ── Config file locations ──────────────────────────────────────────────
 _USER_CONFIG = Path.home() / ".ragdoll" / "config.toml"  # layer 3
@@ -98,7 +115,7 @@ class Settings(BaseSettings):
     jira_servers: dict[str, dict] = Field(default_factory=dict)
     jira_url: str = "https://jira.example.com"
     jira_user: str = ""
-    jira_token: str = ""
+    jira_token: MaskedSecret = Field(default=MaskedSecret(""))
     jira_batch_size: int = 100  # issues per API request
     jira_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
 
@@ -142,7 +159,7 @@ class Settings(BaseSettings):
                 "server_name": resolved_name,
                 "url": cfg.get("url", self.jira_url),
                 "user": cfg.get("user", self.jira_user),
-                "token": cfg.get("token", self.jira_token),
+                "token": _extract_secret(cfg.get("token", self.jira_token)),
                 "batch_size": cfg.get("batch_size", self.jira_batch_size),
                 "auth_method": cfg.get("auth_method", self.jira_auth_method),
                 "projects": cfg.get("projects", []),
@@ -151,7 +168,7 @@ class Settings(BaseSettings):
             "server_name": "default",
             "url": self.jira_url,
             "user": self.jira_user,
-            "token": self.jira_token,
+            "token": _extract_secret(self.jira_token),
             "batch_size": self.jira_batch_size,
             "auth_method": self.jira_auth_method,
             "projects": [],
@@ -161,7 +178,7 @@ class Settings(BaseSettings):
     bitbucket_servers: dict[str, dict] = Field(default_factory=dict)
     bitbucket_url: str = "https://bitbucket.example.com"
     bitbucket_user: str = ""
-    bitbucket_token: str = ""
+    bitbucket_token: MaskedSecret = Field(default=MaskedSecret(""))
     bitbucket_auth_method: str = "pat"  # "pat" for HTTP access token, "basic" for username/password
 
     def get_bitbucket_config(self, server_name: str | None = None) -> dict:
@@ -171,20 +188,20 @@ class Settings(BaseSettings):
             return {
                 "url": cfg.get("url", self.bitbucket_url),
                 "user": cfg.get("user", self.bitbucket_user),
-                "token": cfg.get("token", self.bitbucket_token),
+                "token": _extract_secret(cfg.get("token", self.bitbucket_token)),
                 "auth_method": cfg.get("auth_method", self.bitbucket_auth_method),
             }
         return {
             "url": self.bitbucket_url,
             "user": self.bitbucket_user,
-            "token": self.bitbucket_token,
+            "token": _extract_secret(self.bitbucket_token),
             "auth_method": self.bitbucket_auth_method,
         }
 
     # ── GITHUB ─────────────────────────────────────────────────────────
     github_servers: dict[str, dict] = Field(default_factory=dict)
     github_url: str = "https://api.github.com"
-    github_token: str = ""
+    github_token: MaskedSecret = Field(default=MaskedSecret(""))
 
     github_default_owner: str = ""
     github_repos: list[str] = Field(default_factory=list)
@@ -195,13 +212,13 @@ class Settings(BaseSettings):
             cfg = self.github_servers[server_name]
             return {
                 "url": cfg.get("url", self.github_url),
-                "token": cfg.get("token", self.github_token),
+                "token": _extract_secret(cfg.get("token", self.github_token)),
                 "default_owner": cfg.get("default_owner", self.github_default_owner),
                 "repos": cfg.get("repos", []),
             }
         return {
             "url": self.github_url,
-            "token": self.github_token,
+            "token": _extract_secret(self.github_token),
             "default_owner": self.github_default_owner,
             "repos": self.github_repos,
         }
@@ -221,9 +238,9 @@ class Settings(BaseSettings):
     confluence_servers: dict[str, dict] = Field(default_factory=dict)
     confluence_url: str = "https://confluence.example.com"
     confluence_user: str = ""
-    confluence_token: str = ""
+    confluence_token: MaskedSecret = Field(default=MaskedSecret(""))
     confluence_auth_method: str = "pat"  # "pat" for Data Center, "basic" for Cloud
-    confluence_cookie: str = ""
+    confluence_cookie: MaskedSecret = Field(default=MaskedSecret(""))
 
     def get_confluence_config(
         self,
@@ -265,18 +282,18 @@ class Settings(BaseSettings):
                 "server_name": resolved_name,
                 "url": cfg.get("url", self.confluence_url),
                 "user": cfg.get("user", self.confluence_user),
-                "token": cfg.get("token", self.confluence_token),
+                "token": _extract_secret(cfg.get("token", self.confluence_token)),
                 "auth_method": cfg.get("auth_method", self.confluence_auth_method),
-                "cookie": cfg.get("cookie", cfg.get("cookies", self.confluence_cookie)),
+                "cookie": _extract_secret(cfg.get("cookie", cfg.get("cookies", self.confluence_cookie))),
                 "spaces": cfg.get("spaces", []),
             }
         return {
             "server_name": "default",
             "url": self.confluence_url,
             "user": self.confluence_user,
-            "token": self.confluence_token,
+            "token": _extract_secret(self.confluence_token),
             "auth_method": self.confluence_auth_method,
-            "cookie": self.confluence_cookie,
+            "cookie": _extract_secret(self.confluence_cookie),
             "spaces": [],
         }
 
@@ -293,7 +310,7 @@ class Settings(BaseSettings):
     chroma_host: str | None = None  # e.g., "http://chroma.internal" or "localhost" for remote server
     chroma_port: int = 8000
     chroma_ssl: bool = False
-    chroma_auth_token: str | None = None
+    chroma_auth_token: MaskedSecret | None = Field(default=None)
     chroma_tenant: str = "default_tenant"
     chroma_database: str = "default_database"
 

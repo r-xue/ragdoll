@@ -90,12 +90,12 @@ Important Rules:
    - Do NOT restrict search to only `summary ~ "..."` or `description ~ "..."` unless the user explicitly asks for "in title", "in summary", or "in description".
 
 3. Multi-Concept Separation & High Recall:
-   - Do NOT combine multiple distinct terms into a single exact quoted phrase (e.g. avoid `text ~ "weblog input parameters"` because Jira requires exact phrase sequencing).
+   - Do NOT combine multiple distinct terms into a single exact quoted phrase (e.g. avoid `text ~ "dashboard input parameters"` because Jira requires exact phrase sequencing).
    - Separate distinct concepts using `AND` across `text` or `labels` clauses.
-e   - Example: "weblog input parameters" -> (text ~ "weblog" OR labels in ("weblog", weblog) OR component in ("weblog", "Weblog")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
+   - Example: "dashboard input parameters" -> (text ~ "dashboard" OR labels in ("dashboard", dashboard) OR component in ("dashboard", "Dashboard")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
 
 4. Subsystems, Modules & Labels:
-   - When searching for a module or subsystem topic (e.g. weblog, cache, auth, billing, ui), search both `text` AND `labels` / `component` where applicable:
+   - When searching for a module or subsystem topic (e.g. dashboard, cache, auth, billing, ui), search both `text` AND `labels` / `component` where applicable:
    - Example: "tickets about auth" -> (text ~ "auth" OR labels = "auth" OR component in ("auth", "Auth"))
 
 5. Avoid Auxiliary & Structural Term Overfitting:
@@ -108,7 +108,7 @@ e   - Example: "weblog input parameters" -> (text ~ "weblog" OR labels in ("webl
    - "reported by X" -> reporter = "X"
 
 Examples:
-- "list all active tickets about weblog input parameters section" -> statusCategory != Done AND (text ~ "weblog" OR labels in (weblog, "weblog") OR component in (weblog, "weblog")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
+- "list all active tickets about dashboard input parameters section" -> statusCategory != Done AND (text ~ "dashboard" OR labels in (dashboard, "dashboard") OR component in (dashboard, "dashboard")) AND (text ~ "input" OR text ~ "parameters" OR text ~ "inputs")
 - "open bugs in PROJ about database connection" -> project = PROJ AND statusCategory != Done AND type = Bug AND (text ~ "database" OR labels = "database") AND text ~ "connection"
 - "tickets assigned to jdoe in APP" -> project = APP AND assignee = "jdoe"
 - "unresolved issues for cache memory leak" -> statusCategory != Done AND (text ~ "cache" OR component = "cache") AND text ~ "memory leak"
@@ -227,11 +227,16 @@ def query_live_jira(jql: str) -> str:
 
     # Always include the top-level (global) default server if it's explicitly configured
     if settings.jira_url and settings.jira_url != "https://jira.example.com" and settings.jira_token:
+        token_val = (
+            settings.jira_token.get_secret_value()
+            if hasattr(settings.jira_token, "get_secret_value")
+            else str(settings.jira_token or "")
+        )
         configs_to_query.append({
             "name": "default",
             "url": settings.jira_url,
             "user": settings.jira_user,
-            "token": settings.jira_token,
+            "token": token_val,
             "auth_method": settings.jira_auth_method,
         })
 
@@ -247,11 +252,17 @@ def query_live_jira(jql: str) -> str:
             if any(c["url"] == url for c in configs_to_query):
                 continue
 
+            raw_tok = cfg.get("token", settings.jira_token)
+            tok_val = (
+                raw_tok.get_secret_value()
+                if hasattr(raw_tok, "get_secret_value")
+                else str(raw_tok or "")
+            )
             configs_to_query.append({
                 "name": name,
                 "url": url,
                 "user": cfg.get("user", settings.jira_user),
-                "token": cfg.get("token", settings.jira_token),
+                "token": tok_val,
                 "auth_method": cfg.get("auth_method", settings.jira_auth_method),
                 "projects": cfg.get("projects", []),
             })
@@ -382,11 +393,16 @@ def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
     configs_to_query = []
 
     if settings.bitbucket_url and settings.bitbucket_url != "https://bitbucket.example.com" and settings.bitbucket_token:
+        tok_val = (
+            settings.bitbucket_token.get_secret_value()
+            if hasattr(settings.bitbucket_token, "get_secret_value")
+            else str(settings.bitbucket_token or "")
+        )
         configs_to_query.append({
             "name": "default",
             "url": settings.bitbucket_url,
             "user": settings.bitbucket_user,
-            "token": settings.bitbucket_token,
+            "token": tok_val,
             "auth_method": settings.bitbucket_auth_method,
         })
 
@@ -397,11 +413,17 @@ def query_live_bitbucket(project: str, repo: str, state: str = "OPEN") -> str:
                 continue
             if any(c["url"] == url for c in configs_to_query):
                 continue
+            raw_tok = cfg.get("token", settings.bitbucket_token)
+            tok_val = (
+                raw_tok.get_secret_value()
+                if hasattr(raw_tok, "get_secret_value")
+                else str(raw_tok or "")
+            )
             configs_to_query.append({
                 "name": name,
                 "url": url,
                 "user": cfg.get("user", settings.bitbucket_user),
-                "token": cfg.get("token", settings.bitbucket_token),
+                "token": tok_val,
                 "auth_method": cfg.get("auth_method", settings.bitbucket_auth_method),
             })
 

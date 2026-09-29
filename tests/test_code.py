@@ -36,16 +36,16 @@ def test_extract_cpp_nodes():
     source = '''#include <iostream>
 #include <vector>
 
-class ImageCleaner {
+class BatchProcessor {
 public:
-    ImageCleaner(int niter) : niter_(niter) {}
-    void clean();
+    BatchProcessor(int max_retries) : max_retries_(max_retries) {}
+    void process();
 private:
-    int niter_;
+    int max_retries_;
 };
 
-void ImageCleaner::clean() {
-    std::cout << "Cleaning..." << std::endl;
+void BatchProcessor::process() {
+    std::cout << "Processing..." << std::endl;
 }
 
 double calculate_distance(double x1, double y1, double x2, double y2) {
@@ -55,13 +55,13 @@ double calculate_distance(double x1, double y1, double x2, double y2) {
 }
 '''
     # Test with chunk_size small enough to trigger block extraction
-    docs = _extract_nodes(source, "src/cleaner.cpp", chunk_size=100)
+    docs = _extract_nodes(source, "src/processor.cpp", chunk_size=100)
     assert len(docs) >= 2
     languages = {d.metadata["language"] for d in docs}
     assert languages == {"cpp"}
 
     names = {d.metadata["name"] for d in docs}
-    assert "ImageCleaner" in names
+    assert "BatchProcessor" in names
 
 
 def test_extract_fortran_nodes():
@@ -134,11 +134,11 @@ def test_extract_python_nodes_suppresses_syntax_warnings():
     source = r"""
 def clean_names(val):
     field = '3,4C\*'
-    antPat = '^VA\d+$'
+    idPat = '^ID\d+$'
     pattern = "^.+(\,.+)+$"
     return field
 """
-    docs = _extract_nodes(source, "src/casa_cleaner.py")
+    docs = _extract_nodes(source, "src/legacy_cleaner.py")
     assert len(docs) >= 1
     func_doc = next(d for d in docs if d.metadata["node_type"] == "function")
     assert func_doc.metadata["name"] == "clean_names"

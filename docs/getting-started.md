@@ -142,7 +142,7 @@ pixi run ragdoll status
 
 ```bash
 # Search
-pixi run ragdoll search "how does the calibration pipeline work?"
+pixi run ragdoll search "how does the data processing pipeline work?"
 
 # Summarize
 pixi run ragdoll summarize "known performance issues"

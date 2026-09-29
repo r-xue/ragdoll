@@ -54,6 +54,10 @@ who need to search, summarize, and reason over internal knowledge sources —
 JIRA tickets, PDF documentation, and Python source code — without sending data
 to external services.
 
+```{note}
+Ragdoll is an independent open-source project created and maintained in a personal capacity. It does not represent the official software, technical roadmap, or endorsement of any employer or institution.
+```
+
 ### 🧭 Where should I go?
 
 * **Just want to try it out?** Head to the [Getting Started](getting-started.md) guide.

@@ -71,7 +71,12 @@ def _get_client() -> ClientAPI:
     if settings.chroma_host:
         headers = None
         if settings.chroma_auth_token:
-            headers = {"Authorization": f"Bearer {settings.chroma_auth_token}"}
+            auth_val = (
+                settings.chroma_auth_token.get_secret_value()
+                if hasattr(settings.chroma_auth_token, "get_secret_value")
+                else str(settings.chroma_auth_token)
+            )
+            headers = {"Authorization": f"Bearer {auth_val}"}
         return chromadb.HttpClient(
             host=settings.chroma_host,
             port=settings.chroma_port,
