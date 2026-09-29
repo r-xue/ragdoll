@@ -7,7 +7,7 @@ question-answering pipeline using LlamaIndex LLM engines.
 from __future__ import annotations
 
 import logging
-from typing import Generator
+from typing import Generator, Any
 import re
 
 from llama_index.core import Settings
@@ -24,8 +24,82 @@ You are Ragdoll, an expert assistant for engineering knowledge.
 You answer questions based ONLY on the provided context from JIRA tickets, \
 GitHub issues/PRs, Bitbucket PRs, and internal documentation.
 If the context doesn't contain enough information, say so honestly.
-Always cite the source document IDs when referencing specific information.
+Always cite the source document IDs VERBATIM in [brackets] (e.g. [jira-...], [code-...], [pdf-...]) \
+exactly as they appear in the context without altering their spelling, casing, or punctuation.
 Be concise but thorough."""
+
+THINKING_SUPPRESSION_DIRECTIVE = (
+    "Never output <think> or </think> tags. Directly output your final answer without internal scratchpad reasoning."
+)
+
+
+def _sanitize_response(text: str) -> str:
+    """Strip leaked internal thinking tags and pre-think scratchpad text."""
+    if not text:
+        return ""
+    if "</think>" in text:
+        text = text.split("</think>")[-1]
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    return text.strip()
+
+
+def _clean_stream(resp: Any) -> Generator[str, None, None]:
+    """Stream response tokens while suppressing opening <think> blocks and raw think tags."""
+    inside_think = False
+    buffer = ""
+    has_checked_prefix = False
+
+    for chunk in resp:
+        delta = getattr(chunk, "delta", None) or ""
+        if not delta:
+            continue
+
+        if not has_checked_prefix:
+            buffer += delta
+            stripped = buffer.lstrip()
+            if stripped.startswith("<think>"):
+                inside_think = True
+                if "</think>" in buffer:
+                    remainder = buffer.split("</think>", 1)[1]
+                    buffer = ""
+                    inside_think = False
+                    has_checked_prefix = True
+                    if remainder:
+                        clean_rem = remainder.replace("<think>", "").replace("</think>", "")
+                        if clean_rem:
+                            yield clean_rem.lstrip("\n")
+                continue
+            elif len(stripped) >= len("<think>") or "\n" in buffer or not "<think>".startswith(stripped):
+                has_checked_prefix = True
+                clean_buf = buffer.replace("<think>", "").replace("</think>", "")
+                if clean_buf:
+                    yield clean_buf
+                buffer = ""
+                continue
+            else:
+                continue
+
+        if inside_think:
+            buffer += delta
+            if "</think>" in buffer:
+                remainder = buffer.split("</think>", 1)[1]
+                buffer = ""
+                inside_think = False
+                has_checked_prefix = True
+                if remainder:
+                    clean_rem = remainder.replace("<think>", "").replace("</think>", "")
+                    if clean_rem:
+                        yield clean_rem.lstrip("\n")
+            continue
+
+        clean_delta = delta.replace("<think>", "").replace("</think>", "")
+        if clean_delta:
+            yield clean_delta
+
+    if buffer and not inside_think:
+        clean_buf = buffer.replace("<think>", "").replace("</think>", "")
+        if clean_buf:
+            yield clean_buf
 
 RAG_PROMPT_TEMPLATE = """\
 Use the following context to answer the question.
@@ -37,12 +111,12 @@ Each piece of context has a source ID in square brackets.
 
 Question: {question}
 
-Answer (cite sources using [source_id]):"""
+Answer (cite sources using exact verbatim [source_id] from context):"""
 
 SUMMARIZE_PROMPT_TEMPLATE = """\
 Summarize the following information retrieved from internal JIRA tickets, \
 GitHub issues/PRs, and documentation. Be concise but capture all key points.
-Cite source IDs in [brackets].
+Cite source IDs in [brackets] exactly as they appear in the context.
 
 --- CONTEXT ---
 {context}
@@ -168,17 +242,21 @@ def query(
     context = _format_context(results) if results else "(No relevant context found.)"
     prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=question)
 
+    sys_content = SYSTEM_PROMPT
+    if not settings.enable_thinking:
+        sys_content = f"{SYSTEM_PROMPT}\n{THINKING_SUPPRESSION_DIRECTIVE}"
+
     messages = [
-        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        ChatMessage(role=MessageRole.SYSTEM, content=sys_content),
         ChatMessage(role=MessageRole.USER, content=prompt),
     ]
 
     if stream:
         resp = Settings.llm.stream_chat(messages)
-        return (chunk.delta for chunk in resp)
+        return _clean_stream(resp)
 
     resp = Settings.llm.chat(messages)
-    return resp.message.content or ""
+    return _sanitize_response(resp.message.content or "")
 
 
 def summarize(
@@ -201,17 +279,21 @@ def summarize(
     context = _format_context(results)
     prompt = SUMMARIZE_PROMPT_TEMPLATE.format(context=context, topic=topic)
 
+    sys_content = SYSTEM_PROMPT
+    if not settings.enable_thinking:
+        sys_content = f"{SYSTEM_PROMPT}\n{THINKING_SUPPRESSION_DIRECTIVE}"
+
     messages = [
-        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        ChatMessage(role=MessageRole.SYSTEM, content=sys_content),
         ChatMessage(role=MessageRole.USER, content=prompt),
     ]
 
     if stream:
         resp = Settings.llm.stream_chat(messages)
-        return (chunk.delta for chunk in resp)
+        return _clean_stream(resp)
 
     resp = Settings.llm.chat(messages)
-    return resp.message.content or ""
+    return _sanitize_response(resp.message.content or "")
 
 
 def query_live_jira(jql: str) -> str:
@@ -589,8 +671,12 @@ def chat_with_context(
             user_query = user_query.strip()
             break
 
+    effective_thinking = settings.enable_thinking if enable_thinking is None else enable_thinking
     fast_llm = get_llm(thinking=False)
     active_llm = get_llm(thinking=enable_thinking)
+    base_sys = SYSTEM_PROMPT
+    if not effective_thinking:
+        base_sys = f"{SYSTEM_PROMPT}\n{THINKING_SUPPRESSION_DIRECTIVE}"
     llama_messages = []
 
     if not user_query or user_query.startswith("### Task:\n"):
@@ -688,13 +774,13 @@ def chat_with_context(
                             f"--- ADDITIONAL RELEVANT TICKETS (FROM INDEXED VECTOR DB) ---\n{sem_context}"
                         )
                     context_blocks.append("--- END RESULTS ---")
-                    system_content = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_blocks)
+                    system_content = f"{base_sys}\n\n" + "\n\n".join(context_blocks)
                 except Exception as e:
                     logger.debug("Hybrid semantic retrieval notice: %s", e)
-                    system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+                    system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
                 logger.error("JQL Generation failed: %s", e)
-                system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live database.)"
+                system_content = f"{base_sys}\n\n(Failed to query live database.)"
 
         elif "BITBUCKET_DATABASE" in intent:
             logger.info("Routing query to Live Bitbucket Database...")
@@ -714,10 +800,10 @@ def chat_with_context(
 
                 logger.info("Parsed Bitbucket params: project=%s, repo=%s, state=%s", project, repo, state)
                 live_results = query_live_bitbucket(project, repo, state)
-                system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+                system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
                 logger.error("Bitbucket Parameter Parsing failed: %s", e)
-                system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live Bitbucket database.)"
+                system_content = f"{base_sys}\n\n(Failed to query live Bitbucket database.)"
 
         elif "GITHUB_DATABASE" in intent:
             logger.info("Routing query to Live GitHub Database...")
@@ -751,16 +837,16 @@ def chat_with_context(
 
                 logger.info("Parsed GitHub params: owner=%s, repo=%s, state=%s, type=%s", owner, repo, state, item_type)
                 live_results = query_live_github(owner, repo, state, item_type)
-                system_content = f"{SYSTEM_PROMPT}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
+                system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
                 logger.error("GitHub Parameter Parsing failed: %s", e)
-                system_content = f"{SYSTEM_PROMPT}\n\n(Failed to query live GitHub database.)"
+                system_content = f"{base_sys}\n\n(Failed to query live GitHub database.)"
 
         else:
             # Retrieve context.
             results = search(search_query, top_k=top_k, source_filter=source_filter)
             context = _format_context(results) if results else "(No relevant context found.)"
-            system_content = f"{SYSTEM_PROMPT}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
+            system_content = f"{base_sys}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
 
         # Build augmented message list with context as system prompt.
         llama_messages.append(ChatMessage(role=MessageRole.SYSTEM, content=system_content))
@@ -773,7 +859,7 @@ def chat_with_context(
 
     if stream:
         resp = active_llm.stream_chat(llama_messages)
-        return (chunk.delta or "" for chunk in resp)
+        return _clean_stream(resp)
 
     resp = active_llm.chat(llama_messages)
-    return resp.message.content or ""
+    return _sanitize_response(resp.message.content or "")

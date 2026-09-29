@@ -604,7 +604,7 @@ def chat(verbose: bool, source: str | None, top_k: int | None, enable_thinking: 
     if verbose:
         _setup_logging(True)
     from ragdoll.config import settings
-    from ragdoll.query.rag import chat_with_context
+    from ragdoll.query.rag import chat_with_context, _sanitize_response
 
     effective_top_k = top_k or settings.top_k
     effective_thinking = settings.enable_thinking if enable_thinking is None else enable_thinking
@@ -693,7 +693,7 @@ def chat(verbose: bool, source: str | None, top_k: int | None, enable_thinking: 
                 console.print(token, end="")
 
             console.print()  # newline
-            messages.append({"role": "assistant", "content": full_response})
+            messages.append({"role": "assistant", "content": _sanitize_response(full_response)})
 
         except Exception as e:
             err_str = str(e)

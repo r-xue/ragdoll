@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from llama_index.core import SimpleDirectoryReader
+from llama_index.readers.file import PyMuPDFReader
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -139,13 +140,15 @@ def ingest_pdfs(
 
     console.print(f"  -> Parsing [bold]{len(files_to_index)}[/bold] new/modified PDF(s) ({skipped_count} up-to-date skipped)...")
 
-    # 4. Load and parse only new/updated PDFs
+    # 4. Load and parse only new/updated PDFs using layout-aware PyMuPDF
+    pdf_extractor = {".pdf": PyMuPDFReader()}
     all_documents = []
     for pdf_path, fhash in files_to_index:
         try:
             reader = SimpleDirectoryReader(
                 input_files=[str(pdf_path)],
                 required_exts=[".pdf"],
+                file_extractor=pdf_extractor,
             )
             docs = reader.load_data()
             mtime = pdf_path.stat().st_mtime

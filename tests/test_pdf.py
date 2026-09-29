@@ -42,6 +42,10 @@ def test_incremental_pdf_skipping(tmp_path: Path):
         new_count, skipped_count = ingest_pdfs(tmp_path)
         assert new_count == 1
         assert skipped_count == 0
+        mock_reader.assert_called_once()
+        _, kwargs = mock_reader.call_args
+        assert "file_extractor" in kwargs
+        assert ".pdf" in kwargs["file_extractor"]
 
     # 2. Second run: ChromaDB already has the same file_path and file_hash -> file is skipped
     with patch("ragdoll.ingest.pdf._get_client") as mock_get_client, \

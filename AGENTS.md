@@ -82,7 +82,7 @@ ragdoll/
 │   │   ├── vectordb.py         # ChromaDB client & vector store abstraction
 │   │   └── safety.py           # Database integrity (GracefulInterrupt, health checks)
 │   ├── query/
-│   │   ├── retriever.py        # Dense + lexical hybrid search, Reciprocal Rank Fusion (RRF)
+│   │   ├── retriever.py        # Semantic vector retrieval over ChromaDB via LlamaIndex
 │   │   └── rag.py              # Context assembly, prompt formatting, LLM synthesis
 │   ├── ingest/
 │   │   ├── pdf.py              # PyMuPDF document extraction & chunking

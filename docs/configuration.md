@@ -37,9 +37,9 @@ github_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 github_url = "https://api.github.com" 
 
 # Model preferences
-chat_model = "gpt-oss:20b"          # Linux/Windows (or "qwen3.8:27b-mlx" on Apple Silicon)
+chat_model = "gemma4:12b"          # Linux/macOS/Windows (or "qwen3.8:27b" for deep coding)
 embed_model = "nomic-embed-text"
-temperature = 0.3
+temperature = 0.0             # 0.0 for strict deterministic RAG (or 0.1-0.3 for creative tasks)
 enable_thinking = false             # Set true to enable reasoning chain-of-thought
 
 # Storage (optional - defaults to ~/.ragdoll/data)
@@ -75,17 +75,17 @@ RAGDOLL_JIRA_TOKEN=your_token_here
 Any setting can be overridden via environment variables prefixed with `RAGDOLL_`:
 
 ```bash
-RAGDOLL_CHAT_MODEL=gpt-oss:20b pixi run ragdoll chat
+RAGDOLL_CHAT_MODEL=gemma4:12b pixi run ragdoll chat
 RAGDOLL_TOP_K=5 pixi run ragdoll search "some query"
 ```
 
 ## Retrieval Tuning & Context Sizing (`top_k`)
 
-The `top_k` setting controls the number of context chunks retrieved from ChromaDB for each query or chat turn (default: **`5`**).
+The `top_k` setting controls the number of context chunks retrieved from ChromaDB for each query or chat turn (default: **`10`**).
 
 ```toml
 # ~/.ragdoll/config.toml
-top_k = 5
+top_k = 10
 ```
 
 ### Context Sizing Trade-Offs
@@ -187,13 +187,13 @@ Ragdoll supports Ollama-compatible embedding and chat models. The tables below s
 | **High-Memory Apple Silicon Mac** *(e.g. M4 Pro / Max, 48 GB)* | ~36 GB Metal | `gemma4:26b` (MoE, ~55 tok/s) | `gemma4:31b` or `qwen3.8` |
 
 ```{note}
-**Note on `gpt-oss:20b` (Default Configuration)**
-`gpt-oss:20b` (~13 GB) serves as a balanced general-purpose model with reliable query routing and solid synthesis at ~40–50 tok/s. While it is not highlighted in the table above, it remains a capable out-of-the-box baseline. Developers seeking higher interactive streaming speeds and larger context windows typically prefer `gemma4:12b`, while those requiring deeper technical reasoning and code analysis lean toward `qwen3.8`.
+**Note on `gemma4:12b` (Default Configuration)**
+`gemma4:12b` (~7.6 GB) serves as the fast, balanced out-of-the-box default model. It runs comfortably on 8 GB, 12 GB, 16 GB, and 24 GB hardware (both NVIDIA GPUs and Apple Silicon Macs) with rapid interactive streaming (~65–75 tok/s). Developers requiring deeper technical code refactoring and complex AST analysis can point `chat_model` to `qwen3.8:27b` or `granite4.1:30b`.
 ```
 
 ## Performance & Concurrency Tuning
 
-When performing heavy ingestion tasks while simultaneously running `ragdoll chat`, Ollama can bottleneck or hang if it swaps back and forth between the embedding model (e.g. `nomic-embed-text` or `qwen3-embedding`) and the chat model (e.g. `gpt-oss:20b` or `qwen3.5:9b`).
+When performing heavy ingestion tasks while simultaneously running `ragdoll chat`, Ollama can bottleneck or hang if it swaps back and forth between the embedding model (e.g. `nomic-embed-text` or `qwen3-embedding`) and the chat model (e.g. `gemma4:12b` or `qwen3.5:9b`).
 
 ### 1. Ollama Concurrency & Model Residency
 
@@ -295,9 +295,10 @@ ollama ps
 | ----- | ------ | --------- | ------------- |
 | `ollama_host` | `str` | `"http://localhost:11434"` | Ollama API endpoint |
 | `embed_model` | `str` | `"nomic-embed-text"` | Model for computing embeddings |
-| `chat_model` | `str` | `"gpt-oss:20b"` | Model for generation and chat |
-| `temperature` | `float` | `0.3` | Sampling temperature |
+| `chat_model` | `str` | `"gemma4:12b"` | Model for generation and chat |
+| `temperature` | `float` | `0.0` | Sampling temperature (0.0 for deterministic factual retrieval) |
 | `enable_thinking` | `bool` | `false` | Enable model reasoning/thinking mode (chain-of-thought) |
+| `num_predict` | `int` | `4096` | Maximum generation tokens (headroom for thinking tokens and response text) |
 
 ### Storage
 
@@ -326,7 +327,7 @@ ollama ps
 | ----- | ------ | --------- | ------------- |
 | `chunk_size` | `int` | `1000` | Max characters per chunk |
 | `chunk_overlap` | `int` | `200` | Overlap between consecutive chunks |
-| `top_k` | `int` | `5` | Default number of chunks to retrieve |
+| `top_k` | `int` | `10` | Default number of chunks to retrieve |
 
 ### Multi-Server GitHub & Repository Mapping
 
@@ -549,5 +550,5 @@ Ragdoll is architected to operate in a **zero-data-leakage, 100% offline mode** 
 
 If your organization handles sensitive, proprietary, confidential, or export-controlled information:
 1. **Do not connect Ragdoll via MCP to cloud-hosted assistants** unless your organization has an explicit enterprise data privacy agreement with the provider guaranteeing zero data retention and no model training on API inputs.
-2. **Use local Ollama models exclusively** (e.g. `qwen3.8`, `gemma4:12b`, `gpt-oss:20b`) to maintain a fully air-gapped, zero-leakage security posture.
+2. **Use local Ollama models exclusively** (e.g. `gemma4:12b`, `granite4.2:8b`, `qwen3.8:27b`) to maintain a fully air-gapped, zero-leakage security posture.
 ```
