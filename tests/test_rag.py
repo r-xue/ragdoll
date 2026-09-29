@@ -103,3 +103,59 @@ def test_jira_hybrid_retrieval():
         assert "PROJ-100" in system_msg
         assert "--- ADDITIONAL RELEVANT TICKETS (FROM INDEXED VECTOR DB) ---" in system_msg
         assert "PROJ-200" in system_msg
+        assert "Never output <think> or </think> tags" in system_msg
+
+
+def test_sanitize_response():
+    """Verify _sanitize_response strips thinking blocks and orphaned tags."""
+    from ragdoll.query.rag import _sanitize_response
+
+    # Empty string
+    assert _sanitize_response("") == ""
+
+    # Clean text
+    clean = "This is a clean response with verbatim citations [jira-PROJ-123]."
+    assert _sanitize_response(clean) == clean
+
+    # Orphaned pre-think scratchpad with </think>
+    orphaned = (
+        "Drafting internal thoughts about the query...\n"
+        "[Note: Context doesn't specify data column.]\n"
+        "</think>\n"
+        "This is the actual final response [jira-PROJ-123]."
+    )
+    assert _sanitize_response(orphaned) == "This is the actual final response [jira-PROJ-123]."
+
+    # Fully enclosed <think>...</think> block
+    enclosed = (
+        "<think>\nInternal reasoning here\n</think>\n\n"
+        "Final structured answer."
+    )
+    assert _sanitize_response(enclosed) == "Final structured answer."
+
+
+def test_clean_stream():
+    """Verify _clean_stream strips opening thinking blocks and stray tags."""
+    from ragdoll.query.rag import _clean_stream
+
+    class Chunk:
+        def __init__(self, delta: str):
+            self.delta = delta
+
+    # 1. Normal clean stream
+    chunks1 = [Chunk("Based "), Chunk("on "), Chunk("data.")]
+    assert "".join(_clean_stream(chunks1)) == "Based on data."
+
+    # 2. Stream starting with <think>...</think>
+    chunks2 = [
+        Chunk("<think>\n"),
+        Chunk("reasoning "),
+        Chunk("step 1\n"),
+        Chunk("</think>\n"),
+        Chunk("Final answer."),
+    ]
+    assert "".join(_clean_stream(chunks2)).strip() == "Final answer."
+
+    # 3. Stream with stray </think> tag
+    chunks3 = [Chunk("Pre "), Chunk("</think>"), Chunk("Post")]
+    assert "".join(_clean_stream(chunks3)) == "Pre Post"

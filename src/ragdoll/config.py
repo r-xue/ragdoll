@@ -300,9 +300,10 @@ class Settings(BaseSettings):
     # ── Ollama ─────────────────────────────────────────────────────────
     ollama_host: str = "http://localhost:11434"
     embed_model: str = "nomic-embed-text"
-    chat_model: str = "gpt-oss:20b"
-    temperature: float = 0.3
+    chat_model: str = "gemma4:12b"
+    temperature: float = 0.0
     enable_thinking: bool = False
+    num_predict: int = 4096  # maximum generation tokens (headroom for thinking and responses)
 
     # ── Storage ────────────────────────────────────────────────────────
     data_dir: Path = Path.home() / ".ragdoll" / "data"
@@ -319,7 +320,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200  # overlap between consecutive chunks
 
     # ── Retrieval ──────────────────────────────────────────────────────
-    top_k: int = 5  # number of chunks to retrieve (default: 5)
+    top_k: int = 10  # number of chunks to retrieve (default: 10)
 
     @property
     def llm_model(self) -> str:
@@ -418,7 +419,7 @@ def setup_llamaindex(thinking: bool | None = None):
         temperature=settings.temperature,
         request_timeout=600.0,
         thinking=eff_thinking,
-        additional_kwargs={"num_predict": 2048},
+        additional_kwargs={"num_predict": settings.num_predict},
     )
     LlamaSettings.embed_model = OllamaEmbed(
         model_name=settings.embed_model,
@@ -438,7 +439,7 @@ def get_llm(thinking: bool | None = None):
         temperature=settings.temperature,
         request_timeout=600.0,
         thinking=eff_thinking,
-        additional_kwargs={"num_predict": 2048},
+        additional_kwargs={"num_predict": settings.num_predict},
     )
 
 

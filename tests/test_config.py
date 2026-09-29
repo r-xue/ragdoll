@@ -132,6 +132,16 @@ def test_thinking_settings():
     assert s_off.thinking is False
 
 
+def test_num_predict_settings():
+    s_default = Settings()
+    assert s_default.num_predict == 4096
+    assert s_default.top_k == 10
+
+    s_custom = Settings(num_predict=8192, top_k=25)
+    assert s_custom.num_predict == 8192
+    assert s_custom.top_k == 25
+
+
 def test_masked_secrets():
     s = Settings(
         jira_token="secret-jira",

@@ -26,7 +26,7 @@ source code, indexes them for semantic search, and connects to a local LLM via
 - **Python 3.12+**
 - **[Ollama](https://ollama.ai)** running locally with:
   - An embedding model (e.g. `nomic-embed-text`)
-  - A chat model (e.g. `gpt-oss:20b`, `deepseek-r1:32b`)
+  - A chat model (e.g. `gemma4:12b`, `qwen3.8:27b`)
 - **[pixi](https://pixi.sh)** for environment management
 
 ## Quick Start
@@ -158,8 +158,8 @@ Ragdoll uses a **4-layer precedence** configuration strategy:
 | `jira_batch_size` | `50` | Issues per API request |
 | `ollama_host` | `http://localhost:11434` | Ollama API endpoint |
 | `embed_model` | `nomic-embed-text` | Embedding model |
-| `chat_model` | `gpt-oss:20b` | Chat / generation model |
-| `temperature` | `0.3` | LLM sampling temperature |
+| `chat_model` | `gemma4:12b` | Chat / generation model |
+| `temperature` | `0.0` | LLM sampling temperature |
 | `data_dir` | `~/.ragdoll/data` | ChromaDB storage directory |
 | `collection_name` | `ragdoll` | ChromaDB collection name |
 | `chunk_size` | `1000` | Characters per chunk |

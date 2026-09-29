@@ -58,7 +58,6 @@ sphinx-copybutton = "*"
 sphinxcontrib-mermaid = "*"
 
 [tool.pixi.tasks]
-ragdoll = "ragdoll"
 ingest-pdf = { cmd = "ragdoll ingest pdf", description = "Ingest PDF documents" }
 search = { cmd = "ragdoll search", description = "Semantic search" }
 chat = { cmd = "ragdoll chat", description = "Interactive RAG chat" }

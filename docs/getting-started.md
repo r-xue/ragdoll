@@ -16,16 +16,16 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull the required models
 ollama pull nomic-embed-text    # embedding model
-ollama pull gpt-oss:20b          # chat model (Linux / Windows with NVIDIA)
-# Or on Apple Silicon Mac:
-# ollama pull qwen3.8:27b-mlx   # optimized for Apple Silicon MLX framework
+ollama pull gemma4:12b          # chat model (Linux / Windows with NVIDIA or Apple Silicon)
+# Or for deep technical coding:
+# ollama pull qwen3.8:27b       # 27B model for complex AST reasoning
 
 # Verify models are available
 ollama list
 ```
 
 ```{note}
-`gpt-oss:20b` requires ~13 GB of VRAM. For a fully CPU-resident option, use a smaller model.
+`gemma4:12b` requires ~7.6 GB of VRAM, fitting comfortably on 8 GB, 12 GB, and 16 GB GPUs or unified memory Macs.
 ```
 
 ```{tip}
@@ -67,7 +67,7 @@ cat > ~/.ragdoll/config.toml << 'EOF'
 # 1. Global / Top-Level Settings
 # (Must be at the very top of the file)
 # ==========================================
-chat_model = "gpt-oss:20b"
+chat_model = "gemma4:12b"
 embed_model = "nomic-embed-text"
 chunk_size = 1000
 
