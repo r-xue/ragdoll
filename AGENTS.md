@@ -163,12 +163,18 @@ ragdoll/
 - **Verify first**: Always run `pixi run test` (and `pixi run docs` if documentation was touched) and confirm all checks pass before presenting completed changes.
 - **No destructive file operations**: Never execute `rm -rf`, file deletions, or branch resets without explicit confirmation.
 - **No history rewrites**: Never run `git push --force` or rewrite repository history.
+- **Commit Message Standards**: When asked to draft commit messages or PR descriptions:
+  - **Subject Line**: Imperative mood ("Add feature", "Refactor query retriever"), maximum 50 characters, following Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
+  - **Body**: Wrap at 72 characters. Explain *what* and *why*, not *how*. Reference specific components or files touched.
 
 ---
 
 ## 6. Coding & Testing Standards
 
-- **Python Version**: Target Python 3.12+. Use modern type annotations (`from __future__ import annotations`, `X | Y` union syntax, Pydantic `BaseModel` / `BaseSettings`).
+- **Python Version & Typing**: Target Python 3.12+. Use modern type annotations (`from __future__ import annotations`, `X | Y` union syntax, built-in generics `list[str]`, `dict[str, Any]`, Pydantic `BaseModel` / `BaseSettings`). Add type annotations to all function parameters and return signatures.
+- **Formatting Limits**: Hard wrap code lines and docstrings at 120 characters.
+- **Google-Style Docstrings (No Redundant Types)**: Follow PEP-257 compatible Google-style docstrings. Do **NOT** duplicate type information in `Args:` or `Returns:` sections; rely exclusively on the signature type hints to eliminate docstring drift.
+- **Logging Best Practice**: Use lazy string formatting (`logger.info("Processed %d items: %s", count, name)`) instead of eager f-strings to avoid unnecessary interpolation overhead when logging levels are disabled.
 - **Offline Tests**: All unit tests in `tests/` must be 100% offline. Mock network requests (`httpx`, `jira`, `atlassian`, `ollama`) and use pytest's `tmp_path` fixture for ChromaDB storage.
 - **Backward Compatibility**: Preserve ChromaDB metadata schemas and ingestion formats so existing collections do not become unreadable upon upgrade.
 - **Diagrams & Visualizations**: When documentation requires diagrams, flowcharts, or architecture visualizations, use **Mermaid** (` ```mermaid ` blocks). Sphinx is configured with `sphinxcontrib.mermaid` to render them natively.
