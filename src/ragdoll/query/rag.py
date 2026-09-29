@@ -7,7 +7,7 @@ question-answering pipeline using LlamaIndex LLM engines.
 from __future__ import annotations
 
 import logging
-from typing import Generator, Any
+from typing import Generator, Any, Callable
 import re
 
 from llama_index.core import Settings
@@ -26,6 +26,8 @@ GitHub issues/PRs, Bitbucket PRs, and internal documentation.
 If the context doesn't contain enough information, say so honestly.
 Always cite the source document IDs VERBATIM in [brackets] (e.g. [jira-...], [code-...], [pdf-...]) \
 exactly as they appear in the context without altering their spelling, casing, or punctuation.
+Format your answer with clean Markdown: use bullet points for lists and bold highlights for key concepts. \
+Keep technical text natural and avoid excessive backtick formatting in running sentences.
 Be concise but thorough."""
 
 THINKING_SUPPRESSION_DIRECTIVE = (
@@ -655,8 +657,11 @@ def chat_with_context(
     source_filter: str | None = None,
     stream: bool = False,
     enable_thinking: bool | None = None,
+    on_status: Callable[[str], None] | None = None,
+    on_metadata: Callable[[dict[str, Any]], None] | None = None,
 ) -> str | Generator[str, None, None]:
     """Chat with RAG context injected from the latest user message."""
+    metadata: dict[str, Any] = {}
     user_query = ""
     for msg in reversed(messages):
         if msg["role"] == "user":
@@ -681,6 +686,7 @@ def chat_with_context(
 
     if not user_query or user_query.startswith("### Task:\n"):
         # Just normal chat without RAG (or fast-path for Open WebUI background tasks)
+        metadata["intent"] = "DIRECT_CHAT"
         for msg in messages:
             role = MessageRole(msg["role"])
             llama_messages.append(ChatMessage(role=role, content=msg["content"]))
@@ -688,6 +694,8 @@ def chat_with_context(
         # Context resolution: Reformulate follow-up questions using prior chat history
         search_query = user_query
         if len(messages) > 1:
+            if on_status:
+                on_status("Resolving conversational context…")
             history_lines = []
             for m in messages[:-1]:
                 if m.get("role") in ("user", "assistant"):
@@ -713,10 +721,13 @@ def chat_with_context(
                     if condensed and len(condensed) >= 3 and not condensed.lower().startswith("error"):
                         logger.info("Conversational Context Resolved: '%s' -> '%s'", user_query, condensed)
                         search_query = condensed
+                        metadata["resolved_query"] = condensed
                 except Exception as e:
                     logger.debug("Query condensation failed: %s", e)
 
         # Route query: Database vs Knowledge
+        if on_status:
+            on_status("Classifying query catalog & intent…")
         try:
             intent_msg = fast_llm.chat([ChatMessage(role=MessageRole.USER, content=INTENT_PROMPT.format(question=search_query))])
             intent = intent_msg.message.content.strip().upper()
@@ -725,8 +736,12 @@ def chat_with_context(
             logger.warning("Intent classification failed: %s", e)
             intent = "KNOWLEDGE"
 
+        metadata["intent"] = intent
+
         if "JIRA_DATABASE" in intent or ("DATABASE" in intent and "BITBUCKET" not in intent and "GITHUB" not in intent):
             logger.info("Routing query to Live JIRA Database...")
+            if on_status:
+                on_status("Generating JQL syntax & querying Jira database…")
             try:
                 jql_msg = fast_llm.chat([ChatMessage(role=MessageRole.USER, content=JQL_GENERATOR_PROMPT.format(question=search_query))])
                 jql = jql_msg.message.content.strip()
@@ -755,17 +770,22 @@ def chat_with_context(
                         elif "open" in search_query.lower() or "active" in search_query.lower() or "unresolved" in search_query.lower():
                             jql += ' AND statusCategory != Done'
                 logger.info("Generated JQL: %s", jql)
+                metadata["jql"] = jql
 
                 live_results = query_live_jira(jql)
+                live_keys = set(re.findall(r"\b([A-Z]{2,10}-\d+)\b", live_results))
+                metadata["live_count"] = len(live_keys)
 
                 # Hybrid Retrieval: Enrich live API results with semantic vector search over indexed Jira tickets
                 try:
+                    if on_status:
+                        on_status("Performing hybrid semantic vector search…")
                     vector_results = search(search_query, top_k=top_k or 8, source_filter="jira")
-                    live_keys = set(re.findall(r"\b([A-Z]{2,10}-\d+)\b", live_results))
                     additional_docs = [
                         r for r in vector_results
                         if r.metadata.get("key") and r.metadata.get("key") not in live_keys
                     ]
+                    metadata["vector_count"] = len(additional_docs)
 
                     context_blocks = [f"--- LIVE DATABASE RESULTS ---\n{live_results}"]
                     if additional_docs:
@@ -777,6 +797,7 @@ def chat_with_context(
                     system_content = f"{base_sys}\n\n" + "\n\n".join(context_blocks)
                 except Exception as e:
                     logger.debug("Hybrid semantic retrieval notice: %s", e)
+                    metadata["vector_count"] = 0
                     system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
                 logger.error("JQL Generation failed: %s", e)
@@ -784,6 +805,8 @@ def chat_with_context(
 
         elif "BITBUCKET_DATABASE" in intent:
             logger.info("Routing query to Live Bitbucket Database...")
+            if on_status:
+                on_status("Extracting parameters & querying Bitbucket database…")
             try:
                 bb_msg = Settings.llm.chat(
                     [ChatMessage(role=MessageRole.USER, content=BITBUCKET_PARAM_GENERATOR_PROMPT.format(question=search_query))])
@@ -799,6 +822,9 @@ def chat_with_context(
                     state = parts[2]
 
                 logger.info("Parsed Bitbucket params: project=%s, repo=%s, state=%s", project, repo, state)
+                metadata["project"] = project
+                metadata["repo"] = repo
+                metadata["state"] = state
                 live_results = query_live_bitbucket(project, repo, state)
                 system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
@@ -807,6 +833,8 @@ def chat_with_context(
 
         elif "GITHUB_DATABASE" in intent:
             logger.info("Routing query to Live GitHub Database...")
+            if on_status:
+                on_status("Extracting parameters & querying GitHub database…")
             try:
                 known_repos = settings.get_all_github_repos()
                 known_repos_str = ", ".join(known_repos) if known_repos else "None configured"
@@ -836,6 +864,10 @@ def chat_with_context(
                     owner = settings.github_default_owner
 
                 logger.info("Parsed GitHub params: owner=%s, repo=%s, state=%s, type=%s", owner, repo, state, item_type)
+                metadata["owner"] = owner
+                metadata["repo"] = repo
+                metadata["state"] = state
+                metadata["type"] = item_type
                 live_results = query_live_github(owner, repo, state, item_type)
                 system_content = f"{base_sys}\n\n--- LIVE DATABASE RESULTS ---\n{live_results}\n--- END RESULTS ---"
             except Exception as e:
@@ -844,7 +876,17 @@ def chat_with_context(
 
         else:
             # Retrieve context.
+            effective_k = top_k or settings.top_k
+            if on_status:
+                on_status(f"Retrieving top {effective_k} chunks from vector store…")
             results = search(search_query, top_k=top_k, source_filter=source_filter)
+            metadata["retrieved_count"] = len(results)
+            source_counts: dict[str, int] = {}
+            for r in results:
+                src = r.metadata.get("source", "doc")
+                source_counts[src] = source_counts.get(src, 0) + 1
+            metadata["source_breakdown"] = source_counts
+
             context = _format_context(results) if results else "(No relevant context found.)"
             system_content = f"{base_sys}\n\n--- RETRIEVED CONTEXT ---\n{context}\n--- END CONTEXT ---"
 
@@ -856,6 +898,14 @@ def chat_with_context(
         for msg in recent_messages:
             role = MessageRole(msg["role"])
             llama_messages.append(ChatMessage(role=role, content=msg["content"]))
+
+    if on_status:
+        on_status("Synthesizing response…")
+    if on_metadata:
+        try:
+            on_metadata(metadata)
+        except Exception as e:
+            logger.debug("on_metadata callback failed: %s", e)
 
     if stream:
         resp = active_llm.stream_chat(llama_messages)

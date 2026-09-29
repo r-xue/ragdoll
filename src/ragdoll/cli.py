@@ -24,10 +24,20 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.table import Table
 
+from rich.theme import Theme
+
 from ragdoll import __version__
 from ragdoll.config import settings
 
-console = Console()
+CLI_THEME = Theme(
+    {
+        "markdown.code": "bold cyan",
+        "markdown.code_block": "cyan",
+        "markdown.item.bullet": "bold cyan",
+    }
+)
+
+console = Console(theme=CLI_THEME)
 logger = logging.getLogger(__name__)
 
 # ── Logging setup ──────────────────────────────────────────────────────
@@ -574,18 +584,75 @@ def search(query: str, top_k: int | None, source: str | None) -> None:
 def summarize(topic: str, top_k: int | None, source: str | None) -> None:
     """Summarize information about a topic from ingested data."""
     from ragdoll.query.rag import summarize as _summarize
+    from rich.live import Live
+    from rich.markdown import Markdown
 
     console.print(f"\n[bold cyan]Summarizing:[/bold cyan] {topic}\n")
 
-    response = _summarize(topic, top_k=top_k, source_filter=source, stream=True)
+    with console.status("[dim cyan]Retrieving context & synthesizing summary…[/dim cyan]", spinner="dots"):
+        response = _summarize(topic, top_k=top_k, source_filter=source, stream=True)
+        first_chunk = None
+        for chunk in response:
+            first_chunk = chunk
+            break
 
-    full_text = ""
-    for token in response:
-        full_text += token
-        console.print(token, end="")
+    if first_chunk is None:
+        console.print("[dim](No summary generated)[/dim]\n")
+        return
 
-    console.print()  # newline
+    full_text = first_chunk
+    with Live(Markdown(full_text), console=console, refresh_per_second=15) as live:
+        for token in response:
+            full_text += token
+            live.update(Markdown(full_text))
+
     console.print()
+
+
+def _format_query_metadata(meta: dict[str, Any]) -> str:
+    """Format query intent, generated syntax, and retrieval hits into a clean badge."""
+    intent = meta.get("intent", "KNOWLEDGE")
+    parts = [f"✦ [dim]Intent:[/dim] [bold cyan]{intent}[/bold cyan]"]
+
+    if intent == "JIRA_DATABASE":
+        jql = meta.get("jql")
+        if jql:
+            parts.append(f"[dim]JQL:[/dim] [cyan]{jql}[/cyan]")
+        live_c = meta.get("live_count", 0)
+        vec_c = meta.get("vector_count", 0)
+        parts.append(f"[dim]Retrieved:[/dim] [bold cyan]{live_c} live[/bold cyan] + [bold cyan]{vec_c} indexed[/bold cyan]")
+
+    elif intent == "BITBUCKET_DATABASE":
+        proj = meta.get("project", "")
+        repo = meta.get("repo", "")
+        state = meta.get("state", "ALL")
+        parts.append(f"[dim]Target:[/dim] [cyan]{proj}/{repo}[/cyan] [dim]({state})[/dim]")
+
+    elif intent == "GITHUB_DATABASE":
+        owner = meta.get("owner", "")
+        repo = meta.get("repo", "")
+        state = meta.get("state", "all")
+        itype = meta.get("type", "all")
+        parts.append(f"[dim]Target:[/dim] [cyan]{owner}/{repo}[/cyan] [dim]({itype}, {state})[/dim]")
+
+    elif intent == "DIRECT_CHAT":
+        parts.append("[dim]Direct LLM chat (no context needed)[/dim]")
+
+    else:
+        # KNOWLEDGE
+        count = meta.get("retrieved_count", 0)
+        breakdown = meta.get("source_breakdown", {})
+        if breakdown:
+            b_str = ", ".join(f"{v} {k}" for k, v in breakdown.items())
+            parts.append(f"[dim]Retrieved:[/dim] [bold cyan]{count} chunks[/bold cyan] [dim]({b_str})[/dim]")
+        else:
+            parts.append(f"[dim]Retrieved:[/dim] [bold cyan]{count} chunks[/bold cyan]")
+
+    rq = meta.get("resolved_query")
+    if rq:
+        parts.append(f"[dim]Query:[/dim] [italic]{rq}[/italic]")
+
+    return "  •  ".join(parts)
 
 
 # ── Chat command ───────────────────────────────────────────────────────
@@ -601,10 +668,15 @@ def chat(verbose: bool, source: str | None, top_k: int | None, enable_thinking: 
     Type your questions and get answers grounded in your ingested data.
     Type 'quit', 'exit', or Ctrl+C to end the session.
     """
-    if verbose:
+    if not verbose:
+        logging.getLogger("ragdoll").setLevel(logging.WARNING)
+        logging.getLogger().setLevel(logging.WARNING)
+    else:
         _setup_logging(True)
     from ragdoll.config import settings
     from ragdoll.query.rag import chat_with_context, _sanitize_response
+    from rich.live import Live
+    from rich.markdown import Markdown
 
     effective_top_k = top_k or settings.top_k
     effective_thinking = settings.enable_thinking if enable_thinking is None else enable_thinking
@@ -676,21 +748,46 @@ def chat(verbose: bool, source: str | None, top_k: int | None, enable_thinking: 
 
         messages.append({"role": "user", "content": user_input})
 
-        console.print("\n[bold cyan]Ragdoll:[/bold cyan] ", end="")
-
         try:
-            response = chat_with_context(
-                messages,
-                top_k=top_k,
-                source_filter=source,
-                stream=True,
-                enable_thinking=effective_thinking,
-            )
-
             full_response = ""
-            for token in response:
-                full_response += token
-                console.print(token, end="")
+            query_meta: dict[str, Any] = {}
+
+            with console.status("[dim cyan]Thinking & searching knowledge base…[/dim cyan]", spinner="dots") as status:
+                def _update_status(msg: str) -> None:
+                    status.update(f"[dim cyan]{msg}[/dim cyan]")
+
+                def _record_meta(meta: dict[str, Any]) -> None:
+                    nonlocal query_meta
+                    query_meta = meta
+
+                response = chat_with_context(
+                    messages,
+                    top_k=top_k,
+                    source_filter=source,
+                    stream=True,
+                    enable_thinking=effective_thinking,
+                    on_status=_update_status,
+                    on_metadata=_record_meta,
+                )
+                first_chunk = None
+                for chunk in response:
+                    first_chunk = chunk
+                    break
+
+            if first_chunk is None:
+                console.print("\n[bold cyan]Ragdoll:[/bold cyan] [dim](No response generated)[/dim]\n")
+                continue
+
+            if query_meta:
+                console.print(f"\n{_format_query_metadata(query_meta)}")
+
+            console.print("\n[bold cyan]Ragdoll:[/bold cyan]\n")
+            full_response = first_chunk
+
+            with Live(Markdown(full_response), console=console, refresh_per_second=15) as live:
+                for token in response:
+                    full_response += token
+                    live.update(Markdown(full_response))
 
             console.print()  # newline
             messages.append({"role": "assistant", "content": _sanitize_response(full_response)})
