@@ -67,6 +67,7 @@ html_theme = "furo"
 html_title = "🧶 Ragdoll"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+html_js_files = ["toc_collapse.js"]
 html_theme_options = {
     "light_css_variables": {
         "color-brand-primary": "#6C5CE7",
