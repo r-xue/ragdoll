@@ -6,9 +6,9 @@ interacting with the local RAG system.
 Usage::
 
     ragdoll ingest pdf ./docs/
-    ragdoll ingest jira --jql "project = CAS AND updated >= -30d"
-    ragdoll search "tclean performance regression"
-    ragdoll summarize "AsdmStMan known issues"
+    ragdoll ingest jira --jql "project = PROJ AND updated >= -30d"
+    ragdoll search "database query performance regression"
+    ragdoll summarize "connection pool known issues"
     ragdoll chat
     ragdoll status
 """

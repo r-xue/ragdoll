@@ -130,3 +130,30 @@ def test_thinking_settings():
     s_off = Settings(enable_thinking=False)
     assert s_off.enable_thinking is False
     assert s_off.thinking is False
+
+
+def test_masked_secrets():
+    s = Settings(
+        jira_token="secret-jira",
+        bitbucket_token="secret-bb",
+        github_token="secret-gh",
+        confluence_token="secret-conf",
+        confluence_cookie="secret-cookie",
+        chroma_auth_token="secret-chroma",
+    )
+    # Masked representation and string conversions
+    assert str(s.jira_token) == "**********"
+    assert "secret-jira" not in str(s.jira_token)
+    assert "secret-jira" not in repr(s.jira_token)
+    assert "secret-bb" not in str(s.bitbucket_token)
+    assert "secret-gh" not in str(s.github_token)
+    assert "secret-conf" not in str(s.confluence_token)
+    assert "secret-cookie" not in str(s.confluence_cookie)
+    assert "secret-chroma" not in str(s.chroma_auth_token)
+
+    # get_*_config unmasks for authorized internal client configurations
+    assert s.get_jira_config()["token"] == "secret-jira"
+    assert s.get_bitbucket_config()["token"] == "secret-bb"
+    assert s.get_github_config()["token"] == "secret-gh"
+    assert s.get_confluence_config()["token"] == "secret-conf"
+    assert s.get_confluence_config()["cookie"] == "secret-cookie"

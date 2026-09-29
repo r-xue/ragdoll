@@ -8,6 +8,9 @@ source code, indexes them for semantic search, and connects to a local LLM via
 
 > **Privacy-first:** All data stays on your machine — nothing is sent to external services by default.
 
+> [!NOTE]
+> Ragdoll is an independent open-source project created and maintained in a personal capacity. It is not an official work project and does not represent the official positions, software roadmaps, or endorsement of any employer or institution.
+
 ## Key Features
 
 - **Multi-source ingestion** — PDF, JIRA, Bitbucket, GitHub, Git, and Python code (AST-parsed)
@@ -103,9 +106,9 @@ pixi run ragdoll ingest pdf ./docs/
 
 ```bash
 # Semantic search across all ingested data
-pixi run ragdoll search "tclean performance regression"
-pixi run ragdoll search "AsdmStMan lazy import" --source jira
-pixi run ragdoll search "calibration pipeline" --source pdf -n 5
+pixi run ragdoll search "database query performance regression"
+pixi run ragdoll search "connection pool lazy initialization" --source jira
+pixi run ragdoll search "data processing pipeline" --source pdf -n 5
 pixi run ragdoll search "embedding function" --source code
 ```
 
@@ -113,8 +116,8 @@ pixi run ragdoll search "embedding function" --source code
 
 ```bash
 # Summarize a topic from ingested data
-pixi run ragdoll summarize "What are the known issues with AsdmStMan?"
-pixi run ragdoll summarize "tclean parallelization" --source jira
+pixi run ragdoll summarize "What are the known issues with the connection pool?"
+pixi run ragdoll summarize "batch worker parallelization" --source jira
 ```
 
 ### Interactive Chat
@@ -209,6 +212,23 @@ You can also build the documentation locally from the `docs/` directory using Sp
 ```bash
 pixi run docs
 ```
+
+## AI Assistance & Transparency Disclosure
+
+Ragdoll is developed using AI pair-programming and agentic workflows alongside human engineers.
+
+- **Human Oversight & Responsibility**: The codebase, architectural designs, and operational policies are reviewed, edited, and validated by human maintainers. Human contributors retain full responsibility for the accuracy, security, and licensing integrity of all code in this repository.
+- **Rigorous Verification**: All code changes, refactors, and features must pass comprehensive offline test suites (`pixi run test`), linting, and documentation builds before merging.
+- **Strict Privacy & Secret Hygiene**: Development strictly adheres to zero-egress policies—no proprietary tokens, internal credentials, or confidential datasets are ever exposed during AI-assisted workflows. Architectural invariants and agent safety rules are codified in [`AGENTS.md`](./AGENTS.md).
+
+## Independent Community Project & Personal Capacity Disclaimer
+
+This repository is an independent open-source software project:
+
+- **Personal Effort**: All contributions, code, documentation, and architectural designs represent the independent, voluntary efforts of individual contributors acting strictly in their personal capacities.
+- **Outside Official Working Hours**: Work on this project is conducted entirely during personal, off-duty time.
+- **Not Work-for-Hire**: Contributions are not commissioned, assigned, supervised, or endorsed by any current, past, or future employers of the contributors.
+- **No Institutional Affiliation**: Opinions, designs, and implementations expressed herein are solely those of the individual authors and do not reflect the official positions, policies, or technical roadmaps of any employer or institution.
 
 ## License
 

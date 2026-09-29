@@ -12,7 +12,7 @@ def search_ragdoll(query: str, top_k: int = 5, source_filter: str = None) -> str
     """Search the Ragdoll vector database for context.
     
     Args:
-        query: The natural language query to search for (e.g. "How does the calibration pipeline work?")
+        query: The natural language query to search for (e.g. "How does the data processing pipeline work?")
         top_k: Number of results to return (default: 5)
         source_filter: Optional source to restrict to (e.g. "jira", "git", "code", "pdf", "bitbucket", "confluence")
         

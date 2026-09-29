@@ -18,18 +18,18 @@ def test_query_live_jira_formatting():
     """Verify query_live_jira formats components, labels, and description snippet."""
     mock_issue = MagicMock()
     mock_issue.key = "PROJ-1234"
-    mock_issue.fields.summary = "Too long parameter name is truncated in the weblog"
+    mock_issue.fields.summary = "Too long parameter name is truncated in the dashboard"
     mock_issue.fields.status.name = "Open"
     mock_issue.fields.issuetype.name = "Bug"
     mock_issue.fields.priority.name = "Minor"
     mock_issue.fields.assignee.displayName = "Unassigned"
     mock_issue.fields.updated = "2024-03-01"
-    mock_issue.fields.labels = ["weblog", "report"]
+    mock_issue.fields.labels = ["dashboard", "report"]
 
     mock_comp = MagicMock()
-    mock_comp.name = "weblog"
+    mock_comp.name = "dashboard"
     mock_issue.fields.components = [mock_comp]
-    mock_issue.fields.description = "In the 'Input Parameters' section in the task summary page, parameter name may be truncated."
+    mock_issue.fields.description = "In the 'Input Parameters' section in the task summary page, parameter names are truncated."
 
     mock_reader = MagicMock()
     mock_issues = MagicMock()
@@ -44,8 +44,8 @@ def test_query_live_jira_formatting():
         
         result_str = query_live_jira('project = PROJ')
         assert "PROJ-1234" in result_str
-        assert "Components: weblog" in result_str
-        assert "Labels: weblog, report" in result_str
+        assert "Components: dashboard" in result_str
+        assert "Labels: dashboard, report" in result_str
         assert "Description: In the 'Input Parameters' section in the task summary page" in result_str
 
 
@@ -60,22 +60,22 @@ def test_jira_hybrid_retrieval():
 
     # Mock JQL generation
     jql_resp = MagicMock()
-    jql_resp.message.content = 'statusCategory != Done AND (text ~ "weblog" OR labels = "weblog")'
+    jql_resp.message.content = 'statusCategory != Done AND (text ~ "dashboard" OR labels = "dashboard")'
 
     mock_fast_llm.chat.side_effect = [intent_resp, jql_resp]
 
     # Mock final LLM streaming/chat response
     final_resp = MagicMock()
-    final_resp.message.content = "Here are the tickets about weblog..."
+    final_resp.message.content = "Here are the tickets about dashboard..."
     mock_active_llm.chat.return_value = final_resp
 
     # Mock query_live_jira returning 1 live ticket (PROJ-100)
-    live_jira_text = "### Results from primary:\n- PROJ-100 [Bug] (Open): Fix weblog parameter display"
+    live_jira_text = "### Results from primary:\n- PROJ-100 [Bug] (Open): Fix dashboard parameter display"
 
     # Mock search() returning 2 semantic tickets: PROJ-100 (already live) and PROJ-200 (semantic discovery)
     from ragdoll.query.retriever import SearchResult
     sem_r1 = SearchResult(chunk_id="c1", text="PROJ-100 details", score=0.9, metadata={"key": "PROJ-100", "source": "jira"})
-    sem_r2 = SearchResult(chunk_id="c2", text="PROJ-200: Weblog task inputs validation", score=0.85, metadata={"key": "PROJ-200", "source": "jira"})
+    sem_r2 = SearchResult(chunk_id="c2", text="PROJ-200: Dashboard task inputs validation", score=0.85, metadata={"key": "PROJ-200", "source": "jira"})
 
     def get_llm_mock(thinking=None):
         if thinking is False:
@@ -86,10 +86,10 @@ def test_jira_hybrid_retrieval():
          patch("ragdoll.query.rag.query_live_jira", return_value=live_jira_text), \
          patch("ragdoll.query.rag.search", return_value=[sem_r1, sem_r2]) as mock_search:
 
-        messages = [{"role": "user", "content": "list active tickets about weblog inputs"}]
+        messages = [{"role": "user", "content": "list active tickets about dashboard inputs"}]
         answer = chat_with_context(messages, stream=False)
 
-        assert answer == "Here are the tickets about weblog..."
+        assert answer == "Here are the tickets about dashboard..."
 
         # Verify semantic vector search was queried
         mock_search.assert_called_once()
